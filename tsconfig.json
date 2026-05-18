@@ -1,9 +1,7 @@
 {
     "compilerOptions": {
-        "ignoreDeprecations": "5.0",
-
-        "moduleResolution": "node",
-        "module": "ES2020",
+        "moduleResolution": "bundler",
+        "module": "ESNext",
         "target": "es2021",
         "lib": [
             "es2021",
