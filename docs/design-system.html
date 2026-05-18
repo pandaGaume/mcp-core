@@ -1,0 +1,821 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Design system — @cyanmycelium/mcp-core</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    /* ---------- design-system-only layout ---------- */
+    :root { --col: 1040px; }
+
+    .ds-hero { padding: 80px 0 56px; border-bottom: 1px solid var(--rule); }
+    .ds-hero .crumb {
+      font-family: var(--font-mono); font-size: 12px;
+      color: var(--fg-dim); margin-bottom: 12px;
+    }
+    .ds-hero .crumb a { color: var(--fg-muted); }
+    .ds-hero h1 {
+      font-family: var(--font-sans);
+      font-size: clamp(28px, 4vw, 40px);
+      font-weight: 600; letter-spacing: -0.02em;
+      margin: 0 0 14px; color: var(--fg);
+      line-height: 1.15;
+    }
+    .ds-hero .lede { font-size: 18px; color: var(--fg-muted); max-width: 640px; line-height: 1.55; }
+
+    .ds-section { padding: 64px 0; border-bottom: 1px solid var(--rule); }
+    .ds-section:last-of-type { border-bottom: none; }
+
+    .ds-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+    .ds-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .ds-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    @media (max-width: 720px) {
+      .ds-grid-2, .ds-grid-3, .ds-grid-4 { grid-template-columns: 1fr; }
+    }
+
+    /* ---------- color swatches ---------- */
+    .swatch {
+      border: 1px solid var(--rule);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--bg-elev-1);
+      display: flex; flex-direction: column;
+    }
+    .swatch-fill {
+      height: 88px;
+      position: relative;
+    }
+    .swatch-meta {
+      padding: 12px 14px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      border-top: 1px solid var(--rule);
+    }
+    .swatch-meta .name { color: var(--fg); font-size: 12px; }
+    .swatch-meta .hex { color: var(--fg-muted); }
+    .swatch-meta .role { color: var(--fg-dim); font-family: var(--font-sans); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
+
+    .swatch-fill .pin {
+      position: absolute; top: 10px; right: 10px;
+      font-family: var(--font-mono); font-size: 10px;
+      background: rgba(0,0,0,0.5);
+      color: var(--fg); padding: 2px 6px; border-radius: 3px;
+      letter-spacing: 0.04em;
+    }
+
+    /* ---------- type specimen ---------- */
+    .type-card {
+      border: 1px solid var(--rule);
+      border-radius: 8px;
+      padding: 24px 24px 18px;
+      background: var(--bg-elev-1);
+    }
+    .type-spec {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--fg-dim);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+      display: flex; gap: 16px; flex-wrap: wrap;
+    }
+    .type-spec span:first-child { color: var(--cyan); }
+    .type-display { color: var(--fg); margin: 0; line-height: 1.15; letter-spacing: -0.02em; }
+    .type-display.mono { font-family: var(--font-mono); font-weight: 500; }
+    .type-display.sans { font-family: var(--font-sans); font-weight: 600; }
+    .type-paragraph { color: var(--fg-muted); margin: 12px 0 0; }
+
+    .type-scale-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
+    .type-scale-table td { padding: 14px 0; border-bottom: 1px solid var(--rule); vertical-align: baseline; }
+    .type-scale-table td:first-child { width: 140px; font-family: var(--font-mono); font-size: 11px; color: var(--fg-dim); letter-spacing: 0.04em; text-transform: uppercase; }
+    .type-scale-table td.specimen { color: var(--fg); }
+    .type-scale-table tr:last-child td { border-bottom: none; }
+
+    /* ---------- spacing ---------- */
+    .space-row { display: grid; grid-template-columns: 90px 1fr; align-items: center; gap: 18px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+    .space-row:last-child { border-bottom: none; }
+    .space-row .label { font-family: var(--font-mono); font-size: 12px; color: var(--fg-dim); }
+    .space-row .label b { color: var(--fg); font-weight: 500; }
+    .space-bar { height: 12px; background: var(--cyan); border-radius: 2px; opacity: 0.85; }
+
+    .radii-row { display: flex; gap: 18px; align-items: flex-end; flex-wrap: wrap; }
+    .radii-card {
+      width: 96px; height: 96px;
+      background: var(--bg-elev-2);
+      border: 1px solid var(--rule-strong);
+      display: grid; place-items: end center;
+      padding-bottom: 8px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--fg-muted);
+    }
+
+    /* ---------- components panel ---------- */
+    .comp-card {
+      border: 1px solid var(--rule);
+      border-radius: 8px;
+      background: var(--bg-elev-1);
+      padding: 22px;
+    }
+    .comp-label {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--fg-dim);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 18px;
+    }
+    .comp-stage {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+    .comp-meta {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--fg-muted);
+      line-height: 1.7;
+      border-top: 1px dashed var(--rule);
+      padding-top: 14px;
+    }
+    .comp-meta b { color: var(--fg); font-weight: 500; }
+    .comp-meta .key { color: var(--cyan); }
+
+    /* ---------- syntax key ---------- */
+    .syn-key {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      border: 1px solid var(--rule);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #0a0e13;
+    }
+    .syn-key .row {
+      display: grid;
+      grid-template-columns: 110px 1fr;
+      gap: 14px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--rule);
+      align-items: center;
+    }
+    .syn-key .row:nth-last-child(-n+2) { border-bottom: none; }
+    .syn-key .row .role { color: var(--fg-dim); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+    @media (max-width: 720px) {
+      .syn-key { grid-template-columns: 1fr; }
+      .syn-key .row { border-bottom: 1px solid var(--rule) !important; }
+    }
+
+    /* ---------- principles ---------- */
+    .principles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+    @media (max-width: 720px) { .principles { grid-template-columns: 1fr; } }
+    .principle {
+      border-left: 2px solid var(--cyan);
+      padding: 4px 0 4px 18px;
+    }
+    .principle h4 {
+      margin: 0 0 6px;
+      font-family: var(--font-sans);
+      font-size: 15px;
+      color: var(--fg);
+      font-weight: 600;
+    }
+    .principle p { margin: 0; font-size: 14px; color: var(--fg-muted); line-height: 1.55; }
+
+    /* ---------- nav ---------- */
+    .ds-toc {
+      position: sticky; top: 56px; z-index: 5;
+      background: rgba(11, 15, 20, 0.85);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--rule);
+      padding: 10px 0;
+    }
+    .ds-toc-inner {
+      display: flex; gap: 22px; flex-wrap: wrap;
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+    .ds-toc a { color: var(--fg-muted); }
+    .ds-toc .num { color: var(--cyan); margin-right: 4px; }
+
+    /* Brand mark display */
+    .markwall {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    @media (max-width: 720px) { .markwall { grid-template-columns: 1fr; } }
+    .markwall .cell {
+      border: 1px solid var(--rule);
+      border-radius: 8px;
+      padding: 28px;
+      display: flex; align-items: center; justify-content: center;
+      min-height: 180px;
+      position: relative;
+    }
+    .markwall .cell .pin {
+      position: absolute; top: 10px; left: 12px;
+      font-family: var(--font-mono); font-size: 10px;
+      color: var(--fg-dim); letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .markwall .cell.dark { background: var(--bg-elev-1); }
+    .markwall .cell.darker { background: var(--bg); }
+    .markwall .cell.light { background: #e6edf3; }
+    .markwall .cell.light .pin { color: #444; }
+
+    /* color tokens table */
+    .tokens-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 16px; }
+    .tokens-table th, .tokens-table td {
+      text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--rule);
+      font-family: var(--font-mono);
+    }
+    .tokens-table th { color: var(--fg-dim); font-weight: 500; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; background: var(--bg-elev-1); }
+    .tokens-table td { color: var(--fg-muted); }
+    .tokens-table td.var { color: var(--cyan); }
+    .tokens-table td.swatch-cell { width: 28px; padding: 10px 0 10px 14px; }
+    .tokens-table td.swatch-cell .dot { width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--rule-strong); display: inline-block; vertical-align: middle; }
+
+  </style>
+</head>
+<body>
+
+<!-- topbar -->
+<header class="topbar">
+  <div class="shell topbar-inner" style="max-width: 1040px;">
+    <a class="brand" href="index.html">
+      <svg class="brand-mark" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+        <circle cx="9" cy="9" r="2.2" fill="#00e5c0"/>
+        <circle cx="9" cy="9" r="6" stroke="#00e5c0" stroke-width="1" stroke-dasharray="2 2.4" opacity="0.6"/>
+        <circle cx="3.2" cy="9" r="1.1" fill="#00e5c0" opacity="0.7"/>
+        <circle cx="14.8" cy="9" r="1.1" fill="#00e5c0" opacity="0.7"/>
+        <circle cx="9" cy="3.2" r="1.1" fill="#00e5c0" opacity="0.7"/>
+        <circle cx="9" cy="14.8" r="1.1" fill="#00e5c0" opacity="0.7"/>
+      </svg>
+      <span>@cyanmycelium/mcp-core</span>
+    </a>
+    <nav class="topbar-links">
+      <a href="index.html">← Back to site</a>
+      <a href="https://github.com/pandaGaume/mcp-core" target="_blank" rel="noopener">GitHub →</a>
+    </nav>
+  </div>
+</header>
+
+<!-- intro -->
+<section class="ds-hero">
+  <div class="shell">
+    <div class="crumb"><a href="index.html">mcp-core</a> &nbsp;/&nbsp; design system</div>
+    <h1>Charte graphique</h1>
+    <p class="lede">Tokens, type, components and rules used across the <code class="inline">@cyanmycelium/mcp-core</code> site. Sober, dark, monospace-led — built to read like documentation, not marketing.</p>
+  </div>
+</section>
+
+<!-- TOC -->
+<div class="ds-toc">
+  <div class="shell ds-toc-inner">
+    <a href="#principles"><span class="num">01</span>Principles</a>
+    <a href="#brand"><span class="num">02</span>Brand</a>
+    <a href="#color"><span class="num">03</span>Color</a>
+    <a href="#type"><span class="num">04</span>Type</a>
+    <a href="#syntax"><span class="num">05</span>Syntax</a>
+    <a href="#spacing"><span class="num">06</span>Spacing &amp; radii</a>
+    <a href="#components"><span class="num">07</span>Components</a>
+    <a href="#voice"><span class="num">08</span>Voice</a>
+  </div>
+</div>
+
+<!-- ============================== PRINCIPLES =========================== -->
+<section class="ds-section" id="principles">
+  <div class="shell">
+    <div class="section-num">01 — Principles</div>
+    <h2>Designed for developers reading carefully</h2>
+    <p class="intro">Four rules that decide the rest. Each shows up as a concrete constraint in the tokens.</p>
+
+    <div class="principles">
+      <div class="principle">
+        <h4>Monospace leads</h4>
+        <p>Identifiers, commands, paths, and the package name itself are typeset in mono. Sans-serif is for prose only.</p>
+      </div>
+      <div class="principle">
+        <h4>Cyan is reserved</h4>
+        <p>One accent. Used for status, links, the &ldquo;this package&rdquo; column, and code identifiers — never decoration.</p>
+      </div>
+      <div class="principle">
+        <h4>Lines, not cards</h4>
+        <p>Sections separate with 1px rules. Cards appear only when content is genuinely grouped — tables, code blocks, swatches.</p>
+      </div>
+      <div class="principle">
+        <h4>One column, 860&nbsp;px</h4>
+        <p>Long reading line. Tables and code can break this only when content requires it; nothing else does.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =============================== BRAND =============================== -->
+<section class="ds-section" id="brand">
+  <div class="shell">
+    <div class="section-num">02 — Brand</div>
+    <h2>Mark &amp; wordmark</h2>
+    <p class="intro">A hub-and-spokes node — six points around a center, a quiet reference to mycelium and to MCP&rsquo;s many-clients-one-server shape. The wordmark always sits in monospace.</p>
+
+    <div class="markwall">
+      <div class="cell darker">
+        <span class="pin">on background</span>
+        <svg width="80" height="80" viewBox="0 0 18 18" fill="none">
+          <circle cx="9" cy="9" r="2.2" fill="#00e5c0"/>
+          <circle cx="9" cy="9" r="6" stroke="#00e5c0" stroke-width="0.6" stroke-dasharray="2 2.4" opacity="0.6"/>
+          <circle cx="3.2" cy="9" r="1.1" fill="#00e5c0" opacity="0.7"/>
+          <circle cx="14.8" cy="9" r="1.1" fill="#00e5c0" opacity="0.7"/>
+          <circle cx="9" cy="3.2" r="1.1" fill="#00e5c0" opacity="0.7"/>
+          <circle cx="9" cy="14.8" r="1.1" fill="#00e5c0" opacity="0.7"/>
+        </svg>
+      </div>
+      <div class="cell dark">
+        <span class="pin">on surface</span>
+        <div style="display: flex; align-items: center; gap: 14px;">
+          <svg width="36" height="36" viewBox="0 0 18 18" fill="none">
+            <circle cx="9" cy="9" r="2.2" fill="#00e5c0"/>
+            <circle cx="9" cy="9" r="6" stroke="#00e5c0" stroke-width="0.6" stroke-dasharray="2 2.4" opacity="0.6"/>
+            <circle cx="3.2" cy="9" r="1.1" fill="#00e5c0" opacity="0.7"/>
+            <circle cx="14.8" cy="9" r="1.1" fill="#00e5c0" opacity="0.7"/>
+            <circle cx="9" cy="3.2" r="1.1" fill="#00e5c0" opacity="0.7"/>
+            <circle cx="9" cy="14.8" r="1.1" fill="#00e5c0" opacity="0.7"/>
+          </svg>
+          <span style="font-family: var(--font-mono); font-size: 14px; letter-spacing: -0.01em;"><span style="color: #00e5c0">@</span>cyanmycelium<span style="color: var(--fg-dim)">/</span>mcp-core</span>
+        </div>
+      </div>
+      <div class="cell light">
+        <span class="pin">on light</span>
+        <svg width="80" height="80" viewBox="0 0 18 18" fill="none">
+          <circle cx="9" cy="9" r="2.2" fill="#0a8b76"/>
+          <circle cx="9" cy="9" r="6" stroke="#0a8b76" stroke-width="0.6" stroke-dasharray="2 2.4" opacity="0.7"/>
+          <circle cx="3.2" cy="9" r="1.1" fill="#0a8b76" opacity="0.8"/>
+          <circle cx="14.8" cy="9" r="1.1" fill="#0a8b76" opacity="0.8"/>
+          <circle cx="9" cy="3.2" r="1.1" fill="#0a8b76" opacity="0.8"/>
+          <circle cx="9" cy="14.8" r="1.1" fill="#0a8b76" opacity="0.8"/>
+        </svg>
+      </div>
+    </div>
+
+    <table class="tokens-table" style="margin-top: 28px;">
+      <thead><tr><th>Asset</th><th>Format</th><th>Min size</th><th>Clear space</th></tr></thead>
+      <tbody>
+        <tr><td>Wordmark</td><td>inline SVG / text</td><td>120 px wide</td><td>1× cap-height all sides</td></tr>
+        <tr><td>Mark</td><td>inline SVG, 18×18 viewBox</td><td>16 px</td><td>2 px all sides</td></tr>
+        <tr><td>Favicon</td><td>SVG, monochrome cyan</td><td>16 px</td><td>—</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ================================ COLOR ============================== -->
+<section class="ds-section" id="color">
+  <div class="shell">
+    <div class="section-num">03 — Color</div>
+    <h2>Eight neutrals, one accent</h2>
+    <p class="intro">Background steps walk from <code class="inline">#0b0f14</code> up to inline-code surfaces; one cyan does all the accent work; one lime is reserved for string literals in code.</p>
+
+    <h3 style="margin-top: 8px;">Surfaces</h3>
+    <div class="ds-grid-4">
+      <div class="swatch">
+        <div class="swatch-fill" style="background: #0b0f14"><span class="pin">page</span></div>
+        <div class="swatch-meta"><span class="role">background</span><span class="name">--bg</span><span class="hex">#0B0F14</span></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-fill" style="background: #11161d"><span class="pin">elev 1</span></div>
+        <div class="swatch-meta"><span class="role">surface</span><span class="name">--bg-elev-1</span><span class="hex">#11161D</span></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-fill" style="background: #161c25"><span class="pin">elev 2</span></div>
+        <div class="swatch-meta"><span class="role">surface raised</span><span class="name">--bg-elev-2</span><span class="hex">#161C25</span></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-fill" style="background: #1a212c"><span class="pin">code chip</span></div>
+        <div class="swatch-meta"><span class="role">inline code</span><span class="name">--bg-inline</span><span class="hex">#1A212C</span></div>
+      </div>
+    </div>
+
+    <h3>Lines &amp; foreground</h3>
+    <div class="ds-grid-4">
+      <div class="swatch">
+        <div class="swatch-fill" style="background: #1f2731; border-bottom: 1px solid #2a3340;"></div>
+        <div class="swatch-meta"><span class="role">rule</span><span class="name">--rule</span><span class="hex">#1F2731</span></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-fill" style="background: #2a3340"></div>
+        <div class="swatch-meta"><span class="role">rule strong</span><span class="name">--rule-strong</span><span class="hex">#2A3340</span></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-fill" style="background: #6b7785"></div>
+        <div class="swatch-meta"><span class="role">text dim</span><span class="name">--fg-dim</span><span class="hex">#6B7785</span></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-fill" style="background: #9aa7b5"></div>
+        <div class="swatch-meta"><span class="role">text muted</span><span class="name">--fg-muted</span><span class="hex">#9AA7B5</span></div>
+      </div>
+    </div>
+    <div class="ds-grid-4" style="margin-top: 16px;">
+      <div class="swatch">
+        <div class="swatch-fill" style="background: #e6edf3"></div>
+        <div class="swatch-meta"><span class="role">text primary</span><span class="name">--fg</span><span class="hex">#E6EDF3</span></div>
+      </div>
+    </div>
+
+    <h3>Accent</h3>
+    <div class="ds-grid-3">
+      <div class="swatch">
+        <div class="swatch-fill" style="background: #00e5c0; box-shadow: inset 0 0 60px rgba(0,0,0,0.05);"><span class="pin" style="background: rgba(0,40,32,0.55)">primary</span></div>
+        <div class="swatch-meta"><span class="role">accent · cta · link</span><span class="name">--cyan</span><span class="hex">#00E5C0</span></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-fill" style="background: #00b89a"><span class="pin">hover</span></div>
+        <div class="swatch-meta"><span class="role">accent dim</span><span class="name">--cyan-dim</span><span class="hex">#00B89A</span></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-fill" style="background: rgba(0, 229, 192, 0.10); position: relative;">
+          <div style="position: absolute; inset: 0; background-image: linear-gradient(45deg, rgba(255,255,255,0.04) 25%, transparent 25%, transparent 50%, rgba(255,255,255,0.04) 50%, rgba(255,255,255,0.04) 75%, transparent 75%); background-size: 12px 12px;"></div>
+          <span class="pin">column tint</span>
+        </div>
+        <div class="swatch-meta"><span class="role">surface · 10% cyan</span><span class="name">--cyan-fog</span><span class="hex">rgba(0,229,192,.10)</span></div>
+      </div>
+    </div>
+
+    <h3>Code-only colors</h3>
+    <p class="caption" style="margin-bottom: 12px;">Reserved for syntax highlighting. Never used in UI chrome.</p>
+    <div class="ds-grid-4">
+      <div class="swatch"><div class="swatch-fill" style="background: #c792ea"></div><div class="swatch-meta"><span class="role">keyword</span><span class="name">--syn-keyword</span><span class="hex">#C792EA</span></div></div>
+      <div class="swatch"><div class="swatch-fill" style="background: #82d8ff"></div><div class="swatch-meta"><span class="role">type</span><span class="name">--syn-type</span><span class="hex">#82D8FF</span></div></div>
+      <div class="swatch"><div class="swatch-fill" style="background: #b8e060"></div><div class="swatch-meta"><span class="role">string</span><span class="name">--syn-string</span><span class="hex">#B8E060</span></div></div>
+      <div class="swatch"><div class="swatch-fill" style="background: #ffb86b"></div><div class="swatch-meta"><span class="role">number</span><span class="name">--syn-number</span><span class="hex">#FFB86B</span></div></div>
+    </div>
+
+    <h3>All tokens</h3>
+    <table class="tokens-table">
+      <thead><tr><th></th><th>Variable</th><th>Value</th><th>Used for</th></tr></thead>
+      <tbody>
+        <tr><td class="swatch-cell"><span class="dot" style="background:#0b0f14"></span></td><td class="var">--bg</td><td>#0B0F14</td><td>Page background</td></tr>
+        <tr><td class="swatch-cell"><span class="dot" style="background:#11161d"></span></td><td class="var">--bg-elev-1</td><td>#11161D</td><td>Cards, table body, code chrome</td></tr>
+        <tr><td class="swatch-cell"><span class="dot" style="background:#161c25"></span></td><td class="var">--bg-elev-2</td><td>#161C25</td><td>Table headers, raised surfaces</td></tr>
+        <tr><td class="swatch-cell"><span class="dot" style="background:#1a212c"></span></td><td class="var">--bg-inline</td><td>#1A212C</td><td>Inline <code>code</code> background</td></tr>
+        <tr><td class="swatch-cell"><span class="dot" style="background:#1f2731"></span></td><td class="var">--rule</td><td>#1F2731</td><td>Section dividers, table borders</td></tr>
+        <tr><td class="swatch-cell"><span class="dot" style="background:#2a3340"></span></td><td class="var">--rule-strong</td><td>#2A3340</td><td>Card / button borders</td></tr>
+        <tr><td class="swatch-cell"><span class="dot" style="background:#e6edf3"></span></td><td class="var">--fg</td><td>#E6EDF3</td><td>Body text, headings</td></tr>
+        <tr><td class="swatch-cell"><span class="dot" style="background:#9aa7b5"></span></td><td class="var">--fg-muted</td><td>#9AA7B5</td><td>Paragraphs, secondary text</td></tr>
+        <tr><td class="swatch-cell"><span class="dot" style="background:#6b7785"></span></td><td class="var">--fg-dim</td><td>#6B7785</td><td>Metadata, captions, line numbers</td></tr>
+        <tr><td class="swatch-cell"><span class="dot" style="background:#00e5c0"></span></td><td class="var">--cyan</td><td>#00E5C0</td><td>Accent — CTA, links, status, accents</td></tr>
+        <tr><td class="swatch-cell"><span class="dot" style="background:#00b89a"></span></td><td class="var">--cyan-dim</td><td>#00B89A</td><td>Hover state on cyan elements</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- =============================== TYPE ================================ -->
+<section class="ds-section" id="type">
+  <div class="shell">
+    <div class="section-num">04 — Type</div>
+    <h2>Two families, used with discipline</h2>
+    <p class="intro">Inter for prose, JetBrains Mono for code and identifiers. Headings use Inter; the hero title is mono because the package name is its content.</p>
+
+    <div class="ds-grid-2">
+      <div class="type-card">
+        <div class="type-spec"><span>JetBrains Mono</span><span>500</span><span>monospace</span></div>
+        <p class="type-display mono" style="font-size: 38px;"><span style="color:#00e5c0">@</span>cyanmycelium<span style="color:var(--fg-dim)">/</span>mcp-core</p>
+        <p class="type-paragraph" style="font-family: var(--font-mono); font-size: 12px;">
+          The wordmark, identifiers, code, paths, npm commands, badges, eyebrows, section numbers, table headers.
+        </p>
+      </div>
+      <div class="type-card">
+        <div class="type-spec"><span>Inter</span><span>400 / 500 / 600</span><span>sans-serif</span></div>
+        <p class="type-display sans" style="font-size: 32px;">Four layers, each independently testable</p>
+        <p class="type-paragraph">
+          Section titles, body text, captions. Heading weight 600, body weight 400, link/emphasis weight 500.
+        </p>
+      </div>
+    </div>
+
+    <h3>Scale</h3>
+    <table class="type-scale-table">
+      <tr><td>display · mono · 40/1.15</td><td class="specimen" style="font-family: var(--font-mono); font-size: 40px; font-weight: 500; letter-spacing: -0.02em;">mcp-core</td></tr>
+      <tr><td>h2 · sans · 28/1.25</td><td class="specimen" style="font-size: 28px; font-weight: 600; letter-spacing: -0.02em;">Four layers, each independently testable</td></tr>
+      <tr><td>h3 · sans · 17/1.4</td><td class="specimen" style="font-size: 17px; font-weight: 600; letter-spacing: -0.01em;">Static grammars selected per client</td></tr>
+      <tr><td>lede · sans · 20/1.5 muted</td><td class="specimen" style="font-size: 20px; color: var(--fg-muted);">Engine-neutral primitives for building MCP servers.</td></tr>
+      <tr><td>body · sans · 16/1.6 muted</td><td class="specimen" style="font-size: 16px; color: var(--fg-muted);">The behavior owns the schemas, the adapter owns the execution.</td></tr>
+      <tr><td>caption · sans · 14/1.5 dim</td><td class="specimen" style="font-size: 14px; color: var(--fg-dim);">Requires Node 20.11+. Apache-2.0.</td></tr>
+      <tr><td>eyebrow · mono · 12 caps</td><td class="specimen" style="font-family: var(--font-mono); font-size: 12px; color: var(--cyan); letter-spacing: 0.04em; text-transform: uppercase;">typescript · model context protocol</td></tr>
+      <tr><td>code · mono · 13/1.65</td><td class="specimen" style="font-family: var(--font-mono); font-size: 13px;">const server = new McpServerBuilder()</td></tr>
+      <tr><td>code inline · mono · .86em</td><td class="specimen">Wraps in <code class="inline">McpGrammarStore</code> inside running prose.</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ============================== SYNTAX =============================== -->
+<section class="ds-section" id="syntax">
+  <div class="shell">
+    <div class="section-num">05 — Syntax highlighting</div>
+    <h2>TypeScript palette</h2>
+    <p class="intro">Hand-rolled, Tokyo-Night-adjacent. Function names borrow the brand cyan so eye finds calls quickly; strings are lime, types are pale blue. No background per-line, no rainbow brackets.</p>
+
+    <div class="code-wrap">
+      <div class="code-head">
+        <span class="lang">TypeScript · specimen</span>
+        <span class="lang" style="color: var(--fg-dim);">13 / 1.65 · JetBrains Mono</span>
+      </div>
+<pre><code><span class="tk-c">// One layer of the stack — the Behavior.</span>
+<span class="tk-k">import</span> <span class="tk-pu">{</span> <span class="tk-t">McpBehavior</span><span class="tk-pu">,</span> <span class="tk-t">ToolSupport</span> <span class="tk-pu">}</span> <span class="tk-k">from</span> <span class="tk-s">'@cyanmycelium/mcp-core'</span>
+
+<span class="tk-k">export</span> <span class="tk-k">class</span> <span class="tk-t">CounterBehavior</span> <span class="tk-k">extends</span> <span class="tk-t">McpBehavior</span><span class="tk-pu">&lt;</span><span class="tk-t">CounterState</span><span class="tk-pu">&gt; {</span>
+  <span class="tk-p">namespace</span> <span class="tk-pu">=</span> <span class="tk-s">'counter'</span>
+  <span class="tk-p">version</span>   <span class="tk-pu">=</span> <span class="tk-n">1</span>
+
+  <span class="tk-f">tools</span><span class="tk-pu">()</span> <span class="tk-pu">{</span>
+    <span class="tk-k">return</span> <span class="tk-pu">[{</span>
+      <span class="tk-p">name</span><span class="tk-pu">:</span> <span class="tk-s">'counter_increment'</span><span class="tk-pu">,</span>
+      <span class="tk-p">description</span><span class="tk-pu">:</span> <span class="tk-s">'Add N to counter.'</span><span class="tk-pu">,</span>
+      <span class="tk-p">handler</span><span class="tk-pu">:</span> <span class="tk-pu">(</span><span class="tk-p">args</span><span class="tk-pu">,</span> <span class="tk-p">adapter</span><span class="tk-pu">) =&gt;</span> <span class="tk-p">adapter</span><span class="tk-pu">.</span><span class="tk-f">increment</span><span class="tk-pu">(</span><span class="tk-p">args</span><span class="tk-pu">.</span><span class="tk-p">by</span> <span class="tk-pu">??</span> <span class="tk-n">1</span><span class="tk-pu">),</span>
+    <span class="tk-pu">}]</span>
+  <span class="tk-pu">}</span>
+<span class="tk-pu">}</span>
+</code></pre>
+    </div>
+
+    <div class="syn-key">
+      <div class="row"><span class="role">comment</span><span class="tk-c">// engine-neutral by design</span></div>
+      <div class="row"><span class="role">keyword</span><span class="tk-k">import · class · extends · return · const</span></div>
+      <div class="row"><span class="role">type</span><span class="tk-t">McpBehavior · CounterState · Promise</span></div>
+      <div class="row"><span class="role">string</span><span class="tk-s">'@cyanmycelium/mcp-core'</span></div>
+      <div class="row"><span class="role">number</span><span class="tk-n">0   1   42</span></div>
+      <div class="row"><span class="role">function</span><span class="tk-f">increment · tools · build</span></div>
+      <div class="row"><span class="role">prop / id</span><span class="tk-p">namespace · args.by</span></div>
+      <div class="row"><span class="role">punct</span><span class="tk-pu">{ } ( ) , = ;</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SPACING / RADII ======================== -->
+<section class="ds-section" id="spacing">
+  <div class="shell">
+    <div class="section-num">06 — Spacing &amp; radii</div>
+    <h2>Vertical rhythm on a 4-px base</h2>
+    <p class="intro">Sections breathe with 72 px top/bottom, code blocks with 18 px internal padding. One column, 860 px max — measured to keep code lines below 100 columns at 13 px.</p>
+
+    <h3>Spacing scale</h3>
+    <div>
+      <div class="space-row"><span class="label"><b>4</b> · 4px</span><div class="space-bar" style="width: 4px"></div></div>
+      <div class="space-row"><span class="label"><b>8</b> · 8px</span><div class="space-bar" style="width: 8px"></div></div>
+      <div class="space-row"><span class="label"><b>12</b> · 12px</span><div class="space-bar" style="width: 12px"></div></div>
+      <div class="space-row"><span class="label"><b>16</b> · 16px</span><div class="space-bar" style="width: 16px"></div></div>
+      <div class="space-row"><span class="label"><b>24</b> · 24px</span><div class="space-bar" style="width: 24px"></div></div>
+      <div class="space-row"><span class="label"><b>32</b> · 32px · gutter</span><div class="space-bar" style="width: 32px"></div></div>
+      <div class="space-row"><span class="label"><b>48</b> · 48px</span><div class="space-bar" style="width: 48px"></div></div>
+      <div class="space-row"><span class="label"><b>72</b> · 72px · section</span><div class="space-bar" style="width: 72px"></div></div>
+      <div class="space-row"><span class="label"><b>96</b> · 96px · hero top</span><div class="space-bar" style="width: 96px"></div></div>
+    </div>
+
+    <h3>Radii</h3>
+    <div class="radii-row">
+      <div class="radii-card" style="border-radius: 0">0 — rules</div>
+      <div class="radii-card" style="border-radius: 4px">4 — chips</div>
+      <div class="radii-card" style="border-radius: 6px">6 — buttons</div>
+      <div class="radii-card" style="border-radius: 8px">8 — cards / code</div>
+    </div>
+
+    <h3>Layout</h3>
+    <table class="tokens-table">
+      <tbody>
+        <tr><td class="var">--col</td><td>860 px</td><td>Reading column max-width</td></tr>
+        <tr><td class="var">--gutter</td><td>32 px (20 px on ≤ 640)</td><td>Horizontal page padding</td></tr>
+        <tr><td>section</td><td>72 px / 72 px</td><td>Top &amp; bottom padding inside a section</td></tr>
+        <tr><td>hero</td><td>96 px / 72 px</td><td>Top &amp; bottom padding of the hero</td></tr>
+        <tr><td>topbar</td><td>56 px</td><td>Sticky header height</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================ COMPONENTS ============================= -->
+<section class="ds-section" id="components">
+  <div class="shell">
+    <div class="section-num">07 — Components</div>
+    <h2>The eight pieces that build the page</h2>
+    <p class="intro">Everything else is composition. Each card below shows the live element and the rules behind it.</p>
+
+    <div class="ds-grid-2" style="gap: 20px;">
+
+      <!-- Buttons -->
+      <div class="comp-card">
+        <div class="comp-label">01 · Buttons</div>
+        <div class="comp-stage">
+          <button class="btn btn-primary">
+            <span class="cmd-dollar">$</span>
+            <span class="cmd-text">npm install @cyanmycelium/mcp-core</span>
+            <span class="copy-state">copy</span>
+          </button>
+        </div>
+        <div class="comp-stage">
+          <a class="btn btn-secondary">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+            View on GitHub
+          </a>
+        </div>
+        <div class="comp-meta">
+          <span class="key">.btn-primary</span> — cyan fill, dark text, mono label, click-to-copy.<br>
+          <span class="key">.btn-secondary</span> — transparent, stroke border, hover lightens.<br>
+          <b>Height</b> 44 px · <b>radius</b> 6 px · <b>font</b> 13 mono / 500.
+        </div>
+      </div>
+
+      <!-- Badges -->
+      <div class="comp-card">
+        <div class="comp-label">02 · Badges</div>
+        <div class="comp-stage">
+          <span class="badge accent"><span class="k">status</span><span class="v">pre-release</span></span>
+          <span class="badge"><span class="k">npm</span><span class="v">v0.0.0</span></span>
+          <span class="badge"><span class="k">license</span><span class="v">Apache-2.0</span></span>
+          <span class="badge"><span class="k">node</span><span class="v">≥&nbsp;20.11</span></span>
+        </div>
+        <div class="comp-meta">
+          <b>Pattern</b>: <span class="key">key · value</span> in one chip. Key in <span class="key">--fg-dim</span>, value in <span class="key">--fg</span>; accent badges promote value to <span class="key">--cyan</span>.<br>
+          <b>Height</b> 24 px · <b>radius</b> 4 px · <b>font</b> 11 mono.
+        </div>
+      </div>
+
+      <!-- Inline code -->
+      <div class="comp-card">
+        <div class="comp-label">03 · Inline code</div>
+        <div class="comp-stage" style="display: block;">
+          <p style="margin: 0; color: var(--fg-muted);">
+            Wire your behavior with <code class="inline">McpServerBuilder</code> and pick a transport — typically <code class="inline">DirectTransport</code> or <code class="inline">StdioTransport</code>.
+          </p>
+        </div>
+        <div class="comp-meta">
+          <b>Always</b> for class names, file paths, identifiers in prose.<br>
+          <b>Background</b> <span class="key">--bg-inline</span> · <b>color</b> <span class="key">--cyan</span> · <b>border</b> 1px <span class="key">--rule</span>.<br>
+          <b>Never</b> wrap a sentence in inline code, only the technical token.
+        </div>
+      </div>
+
+      <!-- Eyebrow -->
+      <div class="comp-card">
+        <div class="comp-label">04 · Eyebrow &amp; section number</div>
+        <div class="comp-stage" style="display: block;">
+          <div class="eyebrow" style="margin: 0 0 12px;"><span class="dot"></span>typescript · model context protocol</div>
+          <div class="section-num" style="margin: 0;">04 — Quick start</div>
+        </div>
+        <div class="comp-meta">
+          <b>Eyebrow</b> — hero only. Cyan dot, mono caps, <span class="key">--cyan</span>.<br>
+          <b>Section number</b> — every section. Mono 11 caps, <span class="key">--fg-dim</span>, em-dash separator.
+        </div>
+      </div>
+
+      <!-- Stack layer -->
+      <div class="comp-card">
+        <div class="comp-label">05 · Stack layer</div>
+        <div class="comp-stage" style="display: block;">
+          <div class="stack-layer" style="margin-bottom: 0;">
+            <div class="stack-layer-head">
+              <span class="stack-layer-idx">03</span>
+              <span class="stack-layer-name">BEHAVIOR</span>
+            </div>
+            <div class="stack-layer-body">Identity, namespace, tool / resource schemas.</div>
+          </div>
+        </div>
+        <div class="comp-meta">
+          <b>Used</b> for the four-layer architecture diagram only.<br>
+          <b>Hover</b> lifts the border to <span class="key">--cyan-dim</span>; the body never animates.
+        </div>
+      </div>
+
+      <!-- Table -->
+      <div class="comp-card">
+        <div class="comp-label">06 · Comparison table</div>
+        <div class="comp-stage" style="display: block;">
+          <div class="table-wrap" style="margin: 0;">
+            <table>
+              <thead><tr><th>Capability</th><th>Flat</th><th class="col-this">mcp-core</th></tr></thead>
+              <tbody>
+                <tr><td>Per-session descs</td><td class="no">no</td><td class="col-this"><code>McpGrammarResolver</code></td></tr>
+                <tr><td>Hide per instance</td><td class="no">manual</td><td class="col-this"><code>getToolSupport()</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="comp-meta">
+          <b>Highlight column</b> uses <span class="key">--cyan-fog</span> (10% cyan tint) — never a hard fill.<br>
+          <b>Inline code inside</b> overrides to a darker chip so it reads against the tint.
+        </div>
+      </div>
+
+      <!-- Code block -->
+      <div class="comp-card" style="grid-column: 1 / -1;">
+        <div class="comp-label">07 · Code block</div>
+        <div class="comp-stage" style="display: block;">
+          <div class="code-wrap" style="margin: 0;">
+            <div class="code-head">
+              <span class="lang">TypeScript · example.ts</span>
+              <button class="copy-btn">Copy</button>
+            </div>
+<pre><code><span class="tk-k">const</span> <span class="tk-p">server</span> <span class="tk-pu">=</span> <span class="tk-k">new</span> <span class="tk-t">McpServerBuilder</span><span class="tk-pu">()</span>
+  <span class="tk-pu">.</span><span class="tk-f">withBehavior</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">CounterBehavior</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">CounterAdapter</span><span class="tk-pu">()))</span>
+  <span class="tk-pu">.</span><span class="tk-f">withTransport</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">StdioTransport</span><span class="tk-pu">())</span>
+  <span class="tk-pu">.</span><span class="tk-f">build</span><span class="tk-pu">()</span>
+</code></pre>
+          </div>
+        </div>
+        <div class="comp-meta">
+          <b>Header</b> — language + filename on the left (mono caps), copy button on the right.<br>
+          <b>Body</b> — 18 px padding top/bottom, no padding L/R on <span class="key">&lt;pre&gt;</span> (children own it).<br>
+          <b>Long blocks</b> get <span class="key">max-height: 540px</span> with internal vertical scroll. Never truncate.
+        </div>
+      </div>
+
+      <!-- Conclusion -->
+      <div class="comp-card" style="grid-column: 1 / -1;">
+        <div class="comp-label">08 · Conclusion callout</div>
+        <div class="comp-stage" style="display: block;">
+          <div class="conclusion" style="margin: 0;">
+            <code class="inline">@cyanmycelium/mcp-core</code> is the abstraction stack that makes those concerns first-class instead of bolt-ons.
+          </div>
+        </div>
+        <div class="comp-meta">
+          <b>One per section, at most.</b> Used to land the &ldquo;why this matters&rdquo; line after a list of problems.<br>
+          <b>2 px left border</b> in <span class="key">--cyan</span>, 10% cyan fill, body text upgraded from muted to <span class="key">--fg</span>.
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================ VOICE ================================== -->
+<section class="ds-section" id="voice">
+  <div class="shell">
+    <div class="section-num">08 — Voice</div>
+    <h2>Direct, technical, no marketing</h2>
+
+    <div class="ds-grid-2" style="gap: 24px; margin-top: 8px;">
+      <div>
+        <h3 style="margin-top: 0; color: var(--cyan);">Do</h3>
+        <ul style="padding-left: 18px; color: var(--fg-muted); line-height: 1.7;">
+          <li>State the constraint, then the solution. &ldquo;The official SDK is not enough when…&rdquo;</li>
+          <li>Use the real names of types and methods inline (<code class="inline">McpGrammarStore.toJSON()</code>).</li>
+          <li>Quantify when possible — Node 20.11+, 6 grammar tools, 4 layers.</li>
+          <li>Show a code example before explaining what the code does.</li>
+          <li>End sections on a concrete consequence (&ldquo;No error spam.&rdquo;).</li>
+        </ul>
+      </div>
+      <div>
+        <h3 style="margin-top: 0; color: #ef6b6b;">Don&rsquo;t</h3>
+        <ul style="padding-left: 18px; color: var(--fg-muted); line-height: 1.7;">
+          <li>&ldquo;Powerful&rdquo;, &ldquo;seamless&rdquo;, &ldquo;robust&rdquo;, &ldquo;enterprise-grade&rdquo;.</li>
+          <li>Decorative metaphors, hand-drawn illustrations, laptop mockups.</li>
+          <li>Emoji, exclamation marks, or rhetorical questions.</li>
+          <li>Marketing CTAs (&ldquo;Get started today!&rdquo;) — the install command is the CTA.</li>
+          <li>Wrap whole sentences in inline code; only the token belongs there.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="conclusion" style="margin-top: 28px;">
+      Write as if the reader has already opened a terminal. They have.
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="shell footer-inner" style="max-width: 1040px;">
+    <div class="footer-links">
+      <a href="index.html">← Back to site</a>
+      <a href="https://github.com/pandaGaume/mcp-core" target="_blank" rel="noopener">github.com/pandaGaume/mcp-core</a>
+    </div>
+    <div>© CyanMycelium · Apache-2.0</div>
+  </div>
+</footer>
+
+<script>
+  // smooth scroll
+  document.querySelectorAll('a[href^="#"]').forEach((a) => {
+    a.addEventListener('click', (e) => {
+      const id = a.getAttribute('href').slice(1);
+      const el = document.getElementById(id);
+      if (!el) return;
+      e.preventDefault();
+      window.scrollTo({ top: el.offsetTop - 110, behavior: 'smooth' });
+      history.replaceState(null, '', '#' + id);
+    });
+  });
+</script>
+</body>
+</html>

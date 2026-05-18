@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>@cyanmycelium/mcp-core — Engine-neutral primitives for MCP servers</title>
+  <meta name="description" content="Engine-neutral primitives for building Model Context Protocol servers and clients in TypeScript." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<!-- ============================== TOPBAR ============================== -->
+<header class="topbar">
+  <div class="shell topbar-inner">
+    <a class="brand" href="index.html">
+      <svg class="brand-mark" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+        <circle cx="9" cy="9" r="2.2" fill="#00e5c0"/>
+        <circle cx="9" cy="9" r="6" stroke="#00e5c0" stroke-width="1" stroke-dasharray="2 2.4" opacity="0.6"/>
+        <circle cx="3.2" cy="9" r="1.1" fill="#00e5c0" opacity="0.7"/>
+        <circle cx="14.8" cy="9" r="1.1" fill="#00e5c0" opacity="0.7"/>
+        <circle cx="9" cy="3.2" r="1.1" fill="#00e5c0" opacity="0.7"/>
+        <circle cx="9" cy="14.8" r="1.1" fill="#00e5c0" opacity="0.7"/>
+      </svg>
+      <span>@cyanmycelium/mcp-core</span>
+    </a>
+    <nav class="topbar-links">
+      <a href="#quick-start">Quick start</a>
+      <a href="#stack">Stack</a>
+      <a href="#install">Install</a>
+      <a href="design-system.html">Design</a>
+      <a href="https://github.com/pandaGaume/mcp-core" target="_blank" rel="noopener">GitHub →</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+<!-- ================================ HERO =============================== -->
+<section class="hero">
+  <div class="shell">
+    <div class="eyebrow"><span class="dot"></span>typescript · model context protocol · pre-release</div>
+
+    <h1 class="hero-title">
+      <span class="at">@</span>cyanmycelium<span class="sl">/</span>mcp-core
+    </h1>
+
+    <p class="hero-sub">
+      Engine-neutral primitives for building Model Context Protocol servers and
+      clients in TypeScript.
+    </p>
+
+    <div class="badges">
+      <span class="badge accent"><span class="k">status</span><span class="v">pre-release</span></span>
+      <span class="badge"><span class="k">npm</span><span class="v">v0.0.0</span></span>
+      <span class="badge"><span class="k">public&nbsp;API</span><span class="v">v0.1.0</span></span>
+      <span class="badge"><span class="k">license</span><span class="v">Apache-2.0</span></span>
+      <span class="badge"><span class="k">node</span><span class="v">≥&nbsp;20.11</span></span>
+    </div>
+
+    <div class="hero-cta">
+      <button class="btn btn-primary" data-copy="npm install @cyanmycelium/mcp-core">
+        <span class="cmd-dollar">$</span>
+        <span class="cmd-text">npm install @cyanmycelium/mcp-core</span>
+        <span class="copy-state" data-copy-state>copy</span>
+      </button>
+      <a class="btn btn-secondary" href="https://github.com/pandaGaume/mcp-core" target="_blank" rel="noopener">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        View on GitHub
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ WHY THIS PACKAGE ======================= -->
+<section id="why">
+  <div class="shell">
+    <div class="section-num">01 — Motivation</div>
+    <h2>The official SDK is not enough when…</h2>
+
+    <ol class="why">
+      <li>
+        <span class="why-icon" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="4" cy="8" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="12" cy="12" r="2"/><path d="M6 8h4M6 8l4-4M6 8l4 4"/></svg>
+        </span>
+        <span class="why-body">
+          <b>Multiple LLM clients need different tool descriptions on the same server</b>
+          — Claude wants concise, an internal tool prefers verbose.
+        </span>
+      </li>
+      <li>
+        <span class="why-icon" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4l2 2 2-2M14 12l-2-2-2 2"/><path d="M4 6V3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v3M12 10v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3"/></svg>
+        </span>
+        <span class="why-body">
+          <b>The set of live resources changes while sessions are open</b>
+          — objects added, renamed, removed — and the agent must be notified.
+        </span>
+      </li>
+      <li>
+        <span class="why-icon" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
+        </span>
+        <span class="why-body">
+          <b>The same tool catalog must run against different backends</b>
+          — a 3D engine, a geo viewer, a node graph, a test mock.
+        </span>
+      </li>
+      <li>
+        <span class="why-icon" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><path d="M4 4l8 8"/></svg>
+        </span>
+        <span class="why-body">
+          <b>A tool exists conceptually but is not supported on this instance</b>
+          — you want the client to never see it instead of getting an error.
+        </span>
+      </li>
+      <li>
+        <span class="why-icon" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 13V5a1 1 0 0 1 1-1h6l3 3v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M6 8h4M6 11h4"/></svg>
+        </span>
+        <span class="why-body">
+          <b>Agents need to rewrite their own tool descriptions mid-session</b>
+          — and persist that across reconnects.
+        </span>
+      </li>
+    </ol>
+
+    <div class="conclusion">
+      <code class="inline">@cyanmycelium/mcp-core</code> is the abstraction stack
+      that makes those concerns first-class instead of bolt-ons. It is
+      engine-neutral, runtime-agnostic, and has been used in production behind a
+      multi-backend MCP server.
+    </div>
+  </div>
+</section>
+
+<!-- =========================== THE FOUR-LAYER STACK ==================== -->
+<section id="stack">
+  <div class="shell">
+    <div class="section-num">02 — Architecture</div>
+    <h2>Four layers, each independently testable</h2>
+
+    <div class="stack" role="img" aria-label="Four-layer stack: Grammar over Behavior over Adapter over State">
+
+      <div class="stack-layer">
+        <div class="stack-layer-head">
+          <span class="stack-layer-idx">04</span>
+          <span class="stack-layer-name">GRAMMAR</span>
+        </div>
+        <div class="stack-layer-body">Composable description overrides, resolved per session, mutable at runtime.</div>
+      </div>
+      <div class="stack-arrow" aria-hidden="true">
+        <svg width="14" height="22" viewBox="0 0 14 22"><path d="M7 0v18M2 14l5 5 5-5" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+
+      <div class="stack-layer">
+        <div class="stack-layer-head">
+          <span class="stack-layer-idx">03</span>
+          <span class="stack-layer-name">BEHAVIOR</span>
+        </div>
+        <div class="stack-layer-body">Identity, namespace, tool / resource schemas — the MCP-side contract.</div>
+      </div>
+      <div class="stack-arrow" aria-hidden="true">
+        <svg width="14" height="22" viewBox="0 0 14 22"><path d="M7 0v18M2 14l5 5 5-5" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+
+      <div class="stack-layer">
+        <div class="stack-layer-head">
+          <span class="stack-layer-idx">02</span>
+          <span class="stack-layer-name">ADAPTER</span>
+        </div>
+        <div class="stack-layer-body">Runtime — executes against the actual host objects, emits change events.</div>
+      </div>
+      <div class="stack-arrow" aria-hidden="true">
+        <svg width="14" height="22" viewBox="0 0 14 22"><path d="M7 0v18M2 14l5 5 5-5" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+
+      <div class="stack-layer">
+        <div class="stack-layer-head">
+          <span class="stack-layer-idx">01</span>
+          <span class="stack-layer-name">STATE</span>
+        </div>
+        <div class="stack-layer-body">Serializable, read-only snapshots of those objects (resource contents).</div>
+      </div>
+
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 22%;">Layer</th>
+            <th style="width: 42%;">You write</th>
+            <th style="width: 36%;">Reused across</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Behavior</code></td>
+            <td>Schemas of tools / resources, namespace, URI template</td>
+            <td>All hosts</td>
+          </tr>
+          <tr>
+            <td><code>Adapter</code></td>
+            <td>Live binding to a backend (3D scene, graph, DB, API)</td>
+            <td>One backend at a time</td>
+          </tr>
+          <tr>
+            <td><code>State</code></td>
+            <td>TypeScript interfaces describing resource contents</td>
+            <td>All hosts</td>
+          </tr>
+          <tr>
+            <td><code>Grammar</code></td>
+            <td>JSON files of description overrides</td>
+            <td>All hosts, selected per client</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== WHAT YOU GET ========================= -->
+<section id="get">
+  <div class="shell">
+    <div class="section-num">03 — Comparison</div>
+    <h2>What you get over a flat <code class="inline">{tool, schema, handler}</code> setup</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Capability</th>
+            <th>Flat MCP</th>
+            <th class="col-this">@cyanmycelium/mcp-core</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Per-session tool descriptions</td>
+            <td class="no">no</td>
+            <td class="col-this"><code>McpGrammarResolver(clientInfo) → key</code></td>
+          </tr>
+          <tr>
+            <td>Runtime mutation of descriptions</td>
+            <td class="no">no</td>
+            <td class="col-this"><code>McpGrammarStore</code> + <code>McpGrammarBehavior</code></td>
+          </tr>
+          <tr>
+            <td>Hide tools per instance type</td>
+            <td class="no">manual error in handler</td>
+            <td class="col-this"><code>getToolSupport()</code> returns <code>None</code> / <code>Partial</code> / <code>Full</code></td>
+          </tr>
+          <tr>
+            <td>RFC 6570 URI templates</td>
+            <td class="no">no</td>
+            <td class="col-this">static index + template regex match</td>
+          </tr>
+          <tr>
+            <td>Live resource change notifications</td>
+            <td class="no">manual</td>
+            <td class="col-this"><code>adapter.onResourcesChanged</code>, <code>onResourceContentChanged</code></td>
+          </tr>
+          <tr>
+            <td>Same tools across multiple backends</td>
+            <td class="no">duplicate per backend</td>
+            <td class="col-this">one Behavior, swap the Adapter</td>
+          </tr>
+          <tr>
+            <td>Tree-shakeable browser / Node split</td>
+            <td class="no">one bundle</td>
+            <td class="col-this">subpath exports</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ QUICK START ============================ -->
+<section id="quick-start">
+  <div class="shell">
+    <div class="section-num">04 — Quick start</div>
+    <h2>A minimal MCP server in four steps</h2>
+
+    <p class="intro">A behavior owns the schemas, an adapter owns the execution. The server wires them together with a transport.</p>
+
+    <div class="code-wrap">
+      <div class="code-head">
+        <span class="lang">TypeScript · server.ts</span>
+        <button class="copy-btn" data-copy-block>Copy</button>
+      </div>
+<pre class="scroll-y"><code><span class="tk-c">// 1. State — a serializable snapshot of what the client can read.</span>
+<span class="tk-k">interface</span> <span class="tk-t">CounterState</span> <span class="tk-pu">{</span>
+  <span class="tk-p">value</span><span class="tk-pu">:</span> <span class="tk-t">number</span>
+<span class="tk-pu">}</span>
+
+<span class="tk-c">// 2. Adapter — binds the behavior to a real backend.</span>
+<span class="tk-k">class</span> <span class="tk-t">CounterAdapter</span> <span class="tk-k">extends</span> <span class="tk-t">McpAdapterBase</span><span class="tk-pu">&lt;</span><span class="tk-t">CounterState</span><span class="tk-pu">&gt; {</span>
+  <span class="tk-k">private</span> <span class="tk-p">state</span><span class="tk-pu">:</span> <span class="tk-t">CounterState</span> <span class="tk-pu">= {</span> <span class="tk-p">value</span><span class="tk-pu">:</span> <span class="tk-n">0</span> <span class="tk-pu">}</span>
+
+  <span class="tk-f">read</span><span class="tk-pu">()</span><span class="tk-pu">:</span> <span class="tk-t">CounterState</span> <span class="tk-pu">{</span>
+    <span class="tk-k">return</span> <span class="tk-pu">{</span> <span class="tk-pu">...</span><span class="tk-k">this</span><span class="tk-pu">.</span><span class="tk-p">state</span> <span class="tk-pu">}</span>
+  <span class="tk-pu">}</span>
+
+  <span class="tk-k">async</span> <span class="tk-f">increment</span><span class="tk-pu">(</span><span class="tk-p">by</span><span class="tk-pu">:</span> <span class="tk-t">number</span> <span class="tk-pu">=</span> <span class="tk-n">1</span><span class="tk-pu">):</span> <span class="tk-t">Promise</span><span class="tk-pu">&lt;</span><span class="tk-t">CounterState</span><span class="tk-pu">&gt; {</span>
+    <span class="tk-k">this</span><span class="tk-pu">.</span><span class="tk-p">state</span><span class="tk-pu">.</span><span class="tk-p">value</span> <span class="tk-pu">+=</span> <span class="tk-p">by</span>
+    <span class="tk-k">this</span><span class="tk-pu">.</span><span class="tk-f">emitResourceContentChanged</span><span class="tk-pu">(</span><span class="tk-s">'app://counter'</span><span class="tk-pu">)</span>
+    <span class="tk-k">return</span> <span class="tk-k">this</span><span class="tk-pu">.</span><span class="tk-f">read</span><span class="tk-pu">()</span>
+  <span class="tk-pu">}</span>
+
+  <span class="tk-k">async</span> <span class="tk-f">reset</span><span class="tk-pu">():</span> <span class="tk-t">Promise</span><span class="tk-pu">&lt;</span><span class="tk-t">CounterState</span><span class="tk-pu">&gt; {</span>
+    <span class="tk-k">this</span><span class="tk-pu">.</span><span class="tk-p">state</span><span class="tk-pu">.</span><span class="tk-p">value</span> <span class="tk-pu">=</span> <span class="tk-n">0</span>
+    <span class="tk-k">this</span><span class="tk-pu">.</span><span class="tk-f">emitResourceContentChanged</span><span class="tk-pu">(</span><span class="tk-s">'app://counter'</span><span class="tk-pu">)</span>
+    <span class="tk-k">return</span> <span class="tk-k">this</span><span class="tk-pu">.</span><span class="tk-f">read</span><span class="tk-pu">()</span>
+  <span class="tk-pu">}</span>
+<span class="tk-pu">}</span>
+
+<span class="tk-c">// 3. Behavior — declares the MCP-side contract.</span>
+<span class="tk-k">class</span> <span class="tk-t">CounterBehavior</span> <span class="tk-k">extends</span> <span class="tk-t">McpBehavior</span><span class="tk-pu">&lt;</span><span class="tk-t">CounterState</span><span class="tk-pu">, </span><span class="tk-t">CounterAdapter</span><span class="tk-pu">&gt; {</span>
+  <span class="tk-p">namespace</span> <span class="tk-pu">=</span> <span class="tk-s">'counter'</span>
+  <span class="tk-p">uriTemplate</span> <span class="tk-pu">=</span> <span class="tk-s">'app://counter'</span>
+
+  <span class="tk-f">tools</span><span class="tk-pu">()</span> <span class="tk-pu">{</span>
+    <span class="tk-k">return</span> <span class="tk-pu">[</span>
+      <span class="tk-pu">{</span>
+        <span class="tk-p">name</span><span class="tk-pu">:</span> <span class="tk-s">'counter_increment'</span><span class="tk-pu">,</span>
+        <span class="tk-p">description</span><span class="tk-pu">:</span> <span class="tk-s">'Increment the counter by a given amount.'</span><span class="tk-pu">,</span>
+        <span class="tk-p">inputSchema</span><span class="tk-pu">:</span> <span class="tk-pu">{</span>
+          <span class="tk-p">type</span><span class="tk-pu">:</span> <span class="tk-s">'object'</span><span class="tk-pu">,</span>
+          <span class="tk-p">properties</span><span class="tk-pu">:</span> <span class="tk-pu">{</span> <span class="tk-p">by</span><span class="tk-pu">:</span> <span class="tk-pu">{</span> <span class="tk-p">type</span><span class="tk-pu">:</span> <span class="tk-s">'number'</span><span class="tk-pu">,</span> <span class="tk-p">default</span><span class="tk-pu">:</span> <span class="tk-n">1</span> <span class="tk-pu">} },</span>
+        <span class="tk-pu">},</span>
+        <span class="tk-p">handler</span><span class="tk-pu">:</span> <span class="tk-pu">(</span><span class="tk-p">args</span><span class="tk-pu">, </span><span class="tk-p">adapter</span><span class="tk-pu">) =&gt;</span> <span class="tk-p">adapter</span><span class="tk-pu">.</span><span class="tk-f">increment</span><span class="tk-pu">(</span><span class="tk-p">args</span><span class="tk-pu">.</span><span class="tk-p">by</span><span class="tk-pu">),</span>
+      <span class="tk-pu">},</span>
+      <span class="tk-pu">{</span>
+        <span class="tk-p">name</span><span class="tk-pu">:</span> <span class="tk-s">'counter_reset'</span><span class="tk-pu">,</span>
+        <span class="tk-p">description</span><span class="tk-pu">:</span> <span class="tk-s">'Reset the counter to zero.'</span><span class="tk-pu">,</span>
+        <span class="tk-p">inputSchema</span><span class="tk-pu">:</span> <span class="tk-pu">{</span> <span class="tk-p">type</span><span class="tk-pu">:</span> <span class="tk-s">'object'</span> <span class="tk-pu">},</span>
+        <span class="tk-p">handler</span><span class="tk-pu">:</span> <span class="tk-pu">(</span><span class="tk-p">_</span><span class="tk-pu">, </span><span class="tk-p">adapter</span><span class="tk-pu">) =&gt;</span> <span class="tk-p">adapter</span><span class="tk-pu">.</span><span class="tk-f">reset</span><span class="tk-pu">(),</span>
+      <span class="tk-pu">},</span>
+    <span class="tk-pu">]</span>
+  <span class="tk-pu">}</span>
+<span class="tk-pu">}</span>
+
+<span class="tk-c">// 4. Wire them up and start.</span>
+<span class="tk-k">const</span> <span class="tk-p">server</span> <span class="tk-pu">=</span> <span class="tk-k">new</span> <span class="tk-t">McpServerBuilder</span><span class="tk-pu">()</span>
+  <span class="tk-pu">.</span><span class="tk-f">withBehavior</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">CounterBehavior</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">CounterAdapter</span><span class="tk-pu">()))</span>
+  <span class="tk-pu">.</span><span class="tk-f">withTransport</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">StdioTransport</span><span class="tk-pu">())</span>
+  <span class="tk-pu">.</span><span class="tk-f">build</span><span class="tk-pu">()</span>
+
+<span class="tk-k">await</span> <span class="tk-p">server</span><span class="tk-pu">.</span><span class="tk-f">start</span><span class="tk-pu">()</span>
+</code></pre>
+    </div>
+
+    <p>Save as <code class="inline">server.ts</code>, build, run with <code class="inline">node server.js</code>. Any MCP client (Claude Desktop, an SDK, a hand-rolled JSON-RPC over stdio) can now call <code class="inline">counter_increment</code> and <code class="inline">counter_reset</code> and read <code class="inline">app://counter</code>.</p>
+  </div>
+</section>
+
+<!-- ============================ GRAMMAR LAYER ========================== -->
+<section id="grammar">
+  <div class="shell">
+    <div class="section-num">05 — Grammar</div>
+    <h2>Per-client tool descriptions, no conditional code</h2>
+
+    <p class="intro">A grammar is a set of description overrides that the server applies on top of the behavior&rsquo;s baseline schemas before sending them to the client.</p>
+
+    <h3><span class="h3-num">5.1</span>Static grammars selected per client</h3>
+
+    <div class="code-wrap">
+      <div class="code-head">
+        <span class="lang">TypeScript</span>
+        <button class="copy-btn" data-copy-block>Copy</button>
+      </div>
+<pre><code><span class="tk-k">import</span> <span class="tk-pu">{</span> <span class="tk-t">McpGrammar</span> <span class="tk-pu">}</span> <span class="tk-k">from</span> <span class="tk-s">'@cyanmycelium/mcp-core'</span>
+
+<span class="tk-k">const</span> <span class="tk-p">claude</span> <span class="tk-pu">=</span> <span class="tk-t">McpGrammar</span><span class="tk-pu">.</span><span class="tk-f">fromJSON</span><span class="tk-pu">({</span>
+  <span class="tk-p">counter_increment</span><span class="tk-pu">:</span> <span class="tk-pu">{</span> <span class="tk-p">description</span><span class="tk-pu">:</span> <span class="tk-s">'Add N to counter.'</span> <span class="tk-pu">},</span>
+  <span class="tk-p">counter_reset</span><span class="tk-pu">:</span>     <span class="tk-pu">{</span> <span class="tk-p">description</span><span class="tk-pu">:</span> <span class="tk-s">'Zero the counter.'</span> <span class="tk-pu">},</span>
+<span class="tk-pu">})</span>
+
+<span class="tk-k">const</span> <span class="tk-p">verbose</span> <span class="tk-pu">=</span> <span class="tk-t">McpGrammar</span><span class="tk-pu">.</span><span class="tk-f">fromJSON</span><span class="tk-pu">({</span>
+  <span class="tk-p">counter_increment</span><span class="tk-pu">:</span> <span class="tk-pu">{</span>
+    <span class="tk-p">description</span><span class="tk-pu">:</span>
+      <span class="tk-s">'Increase the persistent counter value. Accepts a numeric `by` '</span>
+      <span class="tk-pu">+</span> <span class="tk-s">'argument; defaults to 1. Emits a resource change event so the '</span>
+      <span class="tk-pu">+</span> <span class="tk-s">'client can re-read app://counter.'</span><span class="tk-pu">,</span>
+  <span class="tk-pu">},</span>
+<span class="tk-pu">})</span>
+
+<span class="tk-k">const</span> <span class="tk-p">server</span> <span class="tk-pu">=</span> <span class="tk-k">new</span> <span class="tk-t">McpServerBuilder</span><span class="tk-pu">()</span>
+  <span class="tk-pu">.</span><span class="tk-f">withBehavior</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">CounterBehavior</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">CounterAdapter</span><span class="tk-pu">()))</span>
+  <span class="tk-pu">.</span><span class="tk-f">withGrammarResolver</span><span class="tk-pu">((</span><span class="tk-p">clientInfo</span><span class="tk-pu">) =&gt;</span>
+    <span class="tk-p">clientInfo</span><span class="tk-pu">.</span><span class="tk-p">name</span> <span class="tk-pu">===</span> <span class="tk-s">'claude-desktop'</span> <span class="tk-pu">?</span> <span class="tk-s">'concise'</span> <span class="tk-pu">:</span> <span class="tk-s">'verbose'</span>
+  <span class="tk-pu">)</span>
+  <span class="tk-pu">.</span><span class="tk-f">withGrammars</span><span class="tk-pu">({</span> <span class="tk-p">concise</span><span class="tk-pu">:</span> <span class="tk-p">claude</span><span class="tk-pu">,</span> <span class="tk-p">verbose</span> <span class="tk-pu">})</span>
+  <span class="tk-pu">.</span><span class="tk-f">build</span><span class="tk-pu">()</span>
+</code></pre>
+    </div>
+
+    <p>Claude sees the short description, every other client sees the long one. No conditional code in the behavior.</p>
+
+    <h3><span class="h3-num">5.2</span>Runtime mutation by the agent itself</h3>
+
+    <p><code class="inline">McpGrammarBehavior</code> exposes the grammar store as a regular MCP behavior with six tools (<code class="inline">grammar_list</code>, <code class="inline">grammar_read</code>, <code class="inline">grammar_set</code>, <code class="inline">grammar_delete</code>, <code class="inline">grammar_import</code>, <code class="inline">grammar_export</code>). The agent can rewrite its own tool descriptions during a session, and the server emits <code class="inline">notifications/tools/list_changed</code> so clients re-fetch the updated schemas.</p>
+
+    <div class="code-wrap">
+      <div class="code-head">
+        <span class="lang">TypeScript</span>
+        <button class="copy-btn" data-copy-block>Copy</button>
+      </div>
+<pre><code><span class="tk-k">import</span> <span class="tk-pu">{</span>
+  <span class="tk-t">McpGrammarStore</span><span class="tk-pu">,</span>
+  <span class="tk-t">McpGrammarBehavior</span><span class="tk-pu">,</span>
+<span class="tk-pu">}</span> <span class="tk-k">from</span> <span class="tk-s">'@cyanmycelium/mcp-core'</span>
+
+<span class="tk-k">const</span> <span class="tk-p">store</span> <span class="tk-pu">=</span> <span class="tk-k">new</span> <span class="tk-t">McpGrammarStore</span><span class="tk-pu">({</span>
+  <span class="tk-p">initial</span><span class="tk-pu">:</span> <span class="tk-t">JSON</span><span class="tk-pu">.</span><span class="tk-f">parse</span><span class="tk-pu">(</span><span class="tk-k">await</span> <span class="tk-f">readFile</span><span class="tk-pu">(</span><span class="tk-s">'grammars.json'</span><span class="tk-pu">,</span> <span class="tk-s">'utf8'</span><span class="tk-pu">)),</span>
+<span class="tk-pu">})</span>
+
+<span class="tk-k">const</span> <span class="tk-p">server</span> <span class="tk-pu">=</span> <span class="tk-k">new</span> <span class="tk-t">McpServerBuilder</span><span class="tk-pu">()</span>
+  <span class="tk-pu">.</span><span class="tk-f">withBehavior</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">CounterBehavior</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">CounterAdapter</span><span class="tk-pu">()))</span>
+  <span class="tk-pu">.</span><span class="tk-f">withBehavior</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">McpGrammarBehavior</span><span class="tk-pu">(</span><span class="tk-p">store</span><span class="tk-pu">))</span>
+  <span class="tk-pu">.</span><span class="tk-f">withGrammarStore</span><span class="tk-pu">(</span><span class="tk-p">store</span><span class="tk-pu">)</span>
+  <span class="tk-pu">.</span><span class="tk-f">build</span><span class="tk-pu">()</span>
+
+<span class="tk-p">store</span><span class="tk-pu">.</span><span class="tk-f">on</span><span class="tk-pu">(</span><span class="tk-s">'change'</span><span class="tk-pu">,</span> <span class="tk-k">async</span> <span class="tk-pu">() =&gt; {</span>
+  <span class="tk-k">await</span> <span class="tk-f">writeFile</span><span class="tk-pu">(</span><span class="tk-s">'grammars.json'</span><span class="tk-pu">,</span> <span class="tk-t">JSON</span><span class="tk-pu">.</span><span class="tk-f">stringify</span><span class="tk-pu">(</span><span class="tk-p">store</span><span class="tk-pu">.</span><span class="tk-f">toJSON</span><span class="tk-pu">(),</span> <span class="tk-k">null</span><span class="tk-pu">,</span> <span class="tk-n">2</span><span class="tk-pu">))</span>
+<span class="tk-pu">})</span>
+</code></pre>
+    </div>
+
+    <p>Persist <code class="inline">store.toJSON()</code> to disk between runs to keep agent-authored descriptions across restarts.</p>
+  </div>
+</section>
+
+<!-- =========================== PER-RESOURCE SUPPORT ==================== -->
+<section id="support">
+  <div class="shell">
+    <div class="section-num">06 — Capability filtering</div>
+    <h2>Advertise only what a resource can actually do</h2>
+
+    <p class="intro">The adapter declares which tools apply to which resource types. The behavior filters tools accordingly before advertising them.</p>
+
+    <div class="code-wrap">
+      <div class="code-head">
+        <span class="lang">TypeScript</span>
+        <button class="copy-btn" data-copy-block>Copy</button>
+      </div>
+<pre><code><span class="tk-k">import</span> <span class="tk-pu">{</span> <span class="tk-t">McpAdapterBase</span><span class="tk-pu">,</span> <span class="tk-t">ToolSupport</span> <span class="tk-pu">}</span> <span class="tk-k">from</span> <span class="tk-s">'@cyanmycelium/mcp-core'</span>
+
+<span class="tk-k">class</span> <span class="tk-t">CameraAdapter</span> <span class="tk-k">extends</span> <span class="tk-t">McpAdapterBase</span><span class="tk-pu">&lt;</span><span class="tk-t">CameraState</span><span class="tk-pu">&gt; {</span>
+  <span class="tk-k">constructor</span><span class="tk-pu">(</span><span class="tk-k">private</span> <span class="tk-p">camera</span><span class="tk-pu">:</span> <span class="tk-t">Camera</span><span class="tk-pu">) {</span> <span class="tk-k">super</span><span class="tk-pu">()</span> <span class="tk-pu">}</span>
+
+  <span class="tk-f">getToolSupport</span><span class="tk-pu">(</span><span class="tk-p">tool</span><span class="tk-pu">:</span> <span class="tk-t">string</span><span class="tk-pu">):</span> <span class="tk-t">ToolSupport</span> <span class="tk-pu">{</span>
+    <span class="tk-k">switch</span> <span class="tk-pu">(</span><span class="tk-p">tool</span><span class="tk-pu">) {</span>
+      <span class="tk-k">case</span> <span class="tk-s">'camera_orbit'</span><span class="tk-pu">:</span>
+        <span class="tk-k">return</span> <span class="tk-k">this</span><span class="tk-pu">.</span><span class="tk-p">camera</span><span class="tk-pu">.</span><span class="tk-p">type</span> <span class="tk-pu">===</span> <span class="tk-s">'arcRotate'</span>
+          <span class="tk-pu">?</span> <span class="tk-t">ToolSupport</span><span class="tk-pu">.</span><span class="tk-p">Full</span>
+          <span class="tk-pu">:</span> <span class="tk-t">ToolSupport</span><span class="tk-pu">.</span><span class="tk-p">None</span>
+      <span class="tk-k">case</span> <span class="tk-s">'camera_set_fov'</span><span class="tk-pu">:</span>
+        <span class="tk-k">return</span> <span class="tk-pu">(</span><span class="tk-s">'fov'</span> <span class="tk-k">in</span> <span class="tk-k">this</span><span class="tk-pu">.</span><span class="tk-p">camera</span><span class="tk-pu">)</span>
+          <span class="tk-pu">?</span> <span class="tk-t">ToolSupport</span><span class="tk-pu">.</span><span class="tk-p">Full</span>
+          <span class="tk-pu">:</span> <span class="tk-t">ToolSupport</span><span class="tk-pu">.</span><span class="tk-p">None</span>
+      <span class="tk-k">case</span> <span class="tk-s">'camera_look_at'</span><span class="tk-pu">:</span>
+        <span class="tk-k">return</span> <span class="tk-t">ToolSupport</span><span class="tk-pu">.</span><span class="tk-p">Full</span>
+      <span class="tk-k">default</span><span class="tk-pu">:</span>
+        <span class="tk-k">return</span> <span class="tk-t">ToolSupport</span><span class="tk-pu">.</span><span class="tk-p">None</span>
+    <span class="tk-pu">}</span>
+  <span class="tk-pu">}</span>
+<span class="tk-pu">}</span>
+</code></pre>
+    </div>
+
+    <p>The client never sees tools it cannot actually call. No error spam.</p>
+  </div>
+</section>
+
+<!-- ======================== ONE BEHAVIOR / MANY ADAPTERS =============== -->
+<section id="adapters">
+  <div class="shell">
+    <div class="section-num">07 — Portability</div>
+    <h2>Write the schema once, run it everywhere</h2>
+
+    <p class="intro">The behavior owns the schemas. The adapter owns the execution. Any adapter that satisfies the contract can be paired with the same behavior.</p>
+
+    <div class="code-wrap">
+      <div class="code-head">
+        <span class="lang">TypeScript</span>
+        <button class="copy-btn" data-copy-block>Copy</button>
+      </div>
+<pre><code><span class="tk-c">// In-memory: tests &amp; local dev.</span>
+<span class="tk-k">class</span> <span class="tk-t">InMemoryCounterAdapter</span> <span class="tk-k">extends</span> <span class="tk-t">McpAdapterBase</span><span class="tk-pu">&lt;</span><span class="tk-t">CounterState</span><span class="tk-pu">&gt; {</span>
+  <span class="tk-k">private</span> <span class="tk-p">value</span> <span class="tk-pu">=</span> <span class="tk-n">0</span>
+  <span class="tk-f">read</span><span class="tk-pu">()</span> <span class="tk-pu">{</span> <span class="tk-k">return</span> <span class="tk-pu">{</span> <span class="tk-p">value</span><span class="tk-pu">:</span> <span class="tk-k">this</span><span class="tk-pu">.</span><span class="tk-p">value</span> <span class="tk-pu">} }</span>
+  <span class="tk-k">async</span> <span class="tk-f">increment</span><span class="tk-pu">(</span><span class="tk-p">by</span> <span class="tk-pu">=</span> <span class="tk-n">1</span><span class="tk-pu">) {</span> <span class="tk-k">this</span><span class="tk-pu">.</span><span class="tk-p">value</span> <span class="tk-pu">+=</span> <span class="tk-p">by</span><span class="tk-pu">;</span> <span class="tk-k">return</span> <span class="tk-k">this</span><span class="tk-pu">.</span><span class="tk-f">read</span><span class="tk-pu">()</span> <span class="tk-pu">}</span>
+<span class="tk-pu">}</span>
+
+<span class="tk-c">// Redis: distributed.</span>
+<span class="tk-k">class</span> <span class="tk-t">RedisCounterAdapter</span> <span class="tk-k">extends</span> <span class="tk-t">McpAdapterBase</span><span class="tk-pu">&lt;</span><span class="tk-t">CounterState</span><span class="tk-pu">&gt; {</span>
+  <span class="tk-k">constructor</span><span class="tk-pu">(</span><span class="tk-k">private</span> <span class="tk-p">redis</span><span class="tk-pu">:</span> <span class="tk-t">Redis</span><span class="tk-pu">,</span> <span class="tk-k">private</span> <span class="tk-p">key</span> <span class="tk-pu">=</span> <span class="tk-s">'counter'</span><span class="tk-pu">) {</span> <span class="tk-k">super</span><span class="tk-pu">()</span> <span class="tk-pu">}</span>
+  <span class="tk-k">async</span> <span class="tk-f">read</span><span class="tk-pu">() {</span>
+    <span class="tk-k">return</span> <span class="tk-pu">{</span> <span class="tk-p">value</span><span class="tk-pu">:</span> <span class="tk-t">Number</span><span class="tk-pu">(</span><span class="tk-k">await</span> <span class="tk-k">this</span><span class="tk-pu">.</span><span class="tk-p">redis</span><span class="tk-pu">.</span><span class="tk-f">get</span><span class="tk-pu">(</span><span class="tk-k">this</span><span class="tk-pu">.</span><span class="tk-p">key</span><span class="tk-pu">))</span> <span class="tk-pu">||</span> <span class="tk-n">0</span> <span class="tk-pu">}</span>
+  <span class="tk-pu">}</span>
+  <span class="tk-k">async</span> <span class="tk-f">increment</span><span class="tk-pu">(</span><span class="tk-p">by</span> <span class="tk-pu">=</span> <span class="tk-n">1</span><span class="tk-pu">) {</span>
+    <span class="tk-k">const</span> <span class="tk-p">value</span> <span class="tk-pu">=</span> <span class="tk-k">await</span> <span class="tk-k">this</span><span class="tk-pu">.</span><span class="tk-p">redis</span><span class="tk-pu">.</span><span class="tk-f">incrby</span><span class="tk-pu">(</span><span class="tk-k">this</span><span class="tk-pu">.</span><span class="tk-p">key</span><span class="tk-pu">,</span> <span class="tk-p">by</span><span class="tk-pu">)</span>
+    <span class="tk-k">this</span><span class="tk-pu">.</span><span class="tk-f">emitResourceContentChanged</span><span class="tk-pu">(</span><span class="tk-s">'app://counter'</span><span class="tk-pu">)</span>
+    <span class="tk-k">return</span> <span class="tk-pu">{</span> <span class="tk-p">value</span> <span class="tk-pu">}</span>
+  <span class="tk-pu">}</span>
+<span class="tk-pu">}</span>
+
+<span class="tk-c">// Postgres: durable, single source of truth.</span>
+<span class="tk-k">class</span> <span class="tk-t">DbCounterAdapter</span> <span class="tk-k">extends</span> <span class="tk-t">McpAdapterBase</span><span class="tk-pu">&lt;</span><span class="tk-t">CounterState</span><span class="tk-pu">&gt; {</span>
+  <span class="tk-k">constructor</span><span class="tk-pu">(</span><span class="tk-k">private</span> <span class="tk-p">db</span><span class="tk-pu">:</span> <span class="tk-t">Pool</span><span class="tk-pu">) {</span> <span class="tk-k">super</span><span class="tk-pu">()</span> <span class="tk-pu">}</span>
+  <span class="tk-k">async</span> <span class="tk-f">read</span><span class="tk-pu">() {</span>
+    <span class="tk-k">const</span> <span class="tk-pu">{</span> <span class="tk-p">rows</span> <span class="tk-pu">} =</span> <span class="tk-k">await</span> <span class="tk-k">this</span><span class="tk-pu">.</span><span class="tk-p">db</span><span class="tk-pu">.</span><span class="tk-f">query</span><span class="tk-pu">(</span><span class="tk-s">'SELECT value FROM counter WHERE id = 1'</span><span class="tk-pu">)</span>
+    <span class="tk-k">return</span> <span class="tk-pu">{</span> <span class="tk-p">value</span><span class="tk-pu">:</span> <span class="tk-p">rows</span><span class="tk-pu">[</span><span class="tk-n">0</span><span class="tk-pu">]?.</span><span class="tk-p">value</span> <span class="tk-pu">??</span> <span class="tk-n">0</span> <span class="tk-pu">}</span>
+  <span class="tk-pu">}</span>
+<span class="tk-pu">}</span>
+
+<span class="tk-c">// Same behavior, any adapter.</span>
+<span class="tk-k">const</span> <span class="tk-p">behavior</span> <span class="tk-pu">=</span> <span class="tk-k">new</span> <span class="tk-t">CounterBehavior</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">RedisCounterAdapter</span><span class="tk-pu">(</span><span class="tk-p">redis</span><span class="tk-pu">))</span>
+</code></pre>
+    </div>
+
+    <p>The pattern scales to richer domains: a single behavior describing mesh operations can run against a BabylonJS scene, a Cesium viewer, or an in-memory fixture, with the LLM-facing schemas never changing.</p>
+  </div>
+</section>
+
+<!-- ============================ TRANSPORTS ============================= -->
+<section id="transports">
+  <div class="shell">
+    <div class="section-num">08 — Transports</div>
+    <h2>Transports</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 24%;">Transport</th>
+            <th style="width: 36%;">Module</th>
+            <th style="width: 40%;">Use case</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>DirectTransport</code></td>
+            <td><code>@cyanmycelium/mcp-core/server</code></td>
+            <td>One server, one WebSocket. The default.</td>
+          </tr>
+          <tr>
+            <td><code>MultiplexTransport</code></td>
+            <td><code>@cyanmycelium/mcp-core/server</code></td>
+            <td>Multiple servers sharing one WebSocket via envelope routing.</td>
+          </tr>
+          <tr>
+            <td><code>LoopbackTransport</code></td>
+            <td><code>@cyanmycelium/mcp-core/server</code></td>
+            <td>Server and client in the same process. Tests, local dev, embedded use.</td>
+          </tr>
+          <tr>
+            <td><code>StdioTransport</code></td>
+            <td><code>@cyanmycelium/mcp-core/node</code></td>
+            <td>Line-delimited JSON-RPC over stdin / stdout. The MCP standard for CLI agents.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Implement <code class="inline">IMessageTransport</code> for anything else (WebRTC, postMessage, gRPC).</p>
+
+    <p class="caption"><strong>Nota.</strong> Runs in both Node.js and the browser. In the browser the server connects to an MCP broker over WebSocket; the broker relays JSON-RPC frames to and from the actual MCP client.</p>
+  </div>
+</section>
+
+<!-- =========================== SUBPATH EXPORTS ========================= -->
+<section id="subpaths">
+  <div class="shell">
+    <div class="section-num">09 — Bundling</div>
+    <h2>Tree-shakeable subpath exports</h2>
+
+    <div class="code-wrap">
+      <div class="code-head">
+        <span class="lang">TypeScript</span>
+        <button class="copy-btn" data-copy-block>Copy</button>
+      </div>
+<pre><code><span class="tk-k">import</span> <span class="tk-pu">{</span> <span class="tk-t">McpBehavior</span><span class="tk-pu">,</span>     <span class="tk-t">McpAdapterBase</span>     <span class="tk-pu">}</span> <span class="tk-k">from</span> <span class="tk-s">'@cyanmycelium/mcp-core'</span>
+<span class="tk-k">import</span> <span class="tk-pu">{</span> <span class="tk-t">McpServerBuilder</span><span class="tk-pu">,</span> <span class="tk-t">DirectTransport</span>    <span class="tk-pu">}</span> <span class="tk-k">from</span> <span class="tk-s">'@cyanmycelium/mcp-core/server'</span>
+<span class="tk-k">import</span> <span class="tk-pu">{</span> <span class="tk-t">McpClient</span><span class="tk-pu">,</span>        <span class="tk-t">WebSocketTransport</span> <span class="tk-pu">}</span> <span class="tk-k">from</span> <span class="tk-s">'@cyanmycelium/mcp-core/client'</span>
+<span class="tk-k">import</span> <span class="tk-pu">{</span> <span class="tk-t">McpGrammar</span><span class="tk-pu">,</span>       <span class="tk-t">McpGrammarStore</span>    <span class="tk-pu">}</span> <span class="tk-k">from</span> <span class="tk-s">'@cyanmycelium/mcp-core/grammar'</span>
+<span class="tk-k">import</span> <span class="tk-pu">{</span> <span class="tk-t">StdioTransport</span>                       <span class="tk-pu">}</span> <span class="tk-k">from</span> <span class="tk-s">'@cyanmycelium/mcp-core/node'</span>
+</code></pre>
+    </div>
+
+    <p>Tree-shaking ensures browser bundles never pull <code class="inline">node:*</code> modules.</p>
+  </div>
+</section>
+
+<!-- =============================== INSTALL ============================= -->
+<section id="install">
+  <div class="shell">
+    <div class="section-num">10 — Install</div>
+    <h2>Install</h2>
+
+    <div class="code-wrap">
+      <div class="code-head">
+        <span class="lang">Shell</span>
+        <button class="copy-btn" data-copy-block>Copy</button>
+      </div>
+<pre><code><span class="tk-pu">$</span> <span class="tk-f">npm</span> <span class="tk-p">install</span> <span class="tk-s">@cyanmycelium/mcp-core</span>
+</code></pre>
+    </div>
+
+    <p>Requires Node 20.11+. Apache-2.0.</p>
+  </div>
+</section>
+
+</main>
+
+<!-- ================================ FOOTER ============================= -->
+<footer>
+  <div class="shell footer-inner">
+    <div class="footer-links">
+      <a href="https://github.com/pandaGaume/mcp-core" target="_blank" rel="noopener">github.com/pandaGaume/mcp-core</a>
+      <a href="https://npmjs.com/package/@cyanmycelium/mcp-core" target="_blank" rel="noopener">npmjs.com/package/@cyanmycelium/mcp-core</a>
+      <a href="design-system.html">Design system</a>
+    </div>
+    <div>© CyanMycelium · Apache-2.0</div>
+  </div>
+</footer>
+
+<div class="toast" id="toast">Copied to clipboard</div>
+
+<script>
+  // ----- Copy buttons (CTA + code blocks) -----
+  const toast = document.getElementById('toast');
+  let toastTimer;
+  function showToast(msg) {
+    toast.textContent = msg || 'Copied to clipboard';
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 1600);
+  }
+
+  // CTA install button
+  document.querySelectorAll('[data-copy]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const text = btn.getAttribute('data-copy');
+      try {
+        await navigator.clipboard.writeText(text);
+        const stateEl = btn.querySelector('[data-copy-state]');
+        if (stateEl) {
+          const original = stateEl.textContent;
+          stateEl.textContent = '✓ copied';
+          setTimeout(() => stateEl.textContent = original, 1400);
+        }
+        showToast('$ ' + text);
+      } catch (e) {
+        showToast('Copy failed');
+      }
+    });
+  });
+
+  // Per-code-block copy
+  document.querySelectorAll('[data-copy-block]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const wrap = btn.closest('.code-wrap');
+      const pre = wrap.querySelector('pre');
+      const text = pre.innerText;
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.classList.add('copied');
+        const orig = btn.textContent;
+        btn.textContent = '✓ Copied';
+        setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1400);
+      } catch (e) {
+        showToast('Copy failed');
+      }
+    });
+  });
+
+  // Smooth scroll for in-page links
+  document.querySelectorAll('a[href^="#"]').forEach((a) => {
+    a.addEventListener('click', (e) => {
+      const id = a.getAttribute('href').slice(1);
+      const el = document.getElementById(id);
+      if (!el) return;
+      e.preventDefault();
+      window.scrollTo({ top: el.offsetTop - 70, behavior: 'smooth' });
+      history.replaceState(null, '', '#' + id);
+    });
+  });
+</script>
+
+</body>
+</html>
