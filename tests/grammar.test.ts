@@ -110,10 +110,10 @@ describe("McpGrammar — round-trip and merge", () => {
         a.setResourceName("r://x", "a-x");
 
         const b = new McpGrammar();
-        b.setToolDescription("foo", "b-foo");                 // overrides
-        b.setToolDescription("bar", "b-bar");                 // new
+        b.setToolDescription("foo", "b-foo"); // overrides
+        b.setToolDescription("bar", "b-bar"); // new
         b.setResourceDescription("r://x", "b-x-description"); // adds, keeps name from a
-        b.setResourceTemplateName("t://y/{i}", "TplY");       // new
+        b.setResourceTemplateName("t://y/{i}", "TplY"); // new
 
         const merged = McpGrammar.merge(a, b);
         expect(merged.getToolDescription("foo")).toBe("b-foo");

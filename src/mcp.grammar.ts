@@ -102,7 +102,11 @@ export class McpGrammar {
 
     private static _isModernShape(data: McpGrammarData | McpGrammarLegacyData): boolean {
         const d = data as McpGrammarData;
-        return (typeof d.tools === "object" && d.tools !== null) || (typeof d.resources === "object" && d.resources !== null) || (typeof d.templates === "object" && d.templates !== null);
+        return (
+            (typeof d.tools === "object" && d.tools !== null) ||
+            (typeof d.resources === "object" && d.resources !== null) ||
+            (typeof d.templates === "object" && d.templates !== null)
+        );
     }
 
     // ── Tool description ─────────────────────────────────────────────────────
