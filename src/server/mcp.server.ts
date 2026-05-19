@@ -6,6 +6,7 @@ import type {
     McpClientCapabilities,
     McpClientInfo,
     McpInitializeResult,
+    McpResource,
     McpResourceTemplate,
     McpServerCapabilities,
     McpTool,
@@ -243,22 +244,30 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      * Handles `resources/templates/list`.
      * Collects URI templates from all registered behavior types that declare one.
      * Each unique namespace contributes at most one template entry.
+     *
+     * If a session grammar was resolved during `initialize`, template `name`
+     * and `description` are patched before the response is sent.
      */
     resourcesTemplatesList(req: JsonRpcRequest): JsonRpcResponse {
         const templates: McpResourceTemplate[] = [];
         for (const behavior of this._behaviors.values()) {
             templates.push(...behavior.getResourceTemplates());
         }
-        return Mcp.resourcesTemplatesListResult(req.id, templates);
+        const patched = this._sessionGrammar ? this._applyTemplateGrammar(templates, this._sessionGrammar) : templates;
+        return Mcp.resourcesTemplatesListResult(req.id, patched);
     }
 
     /**
      * Handles `resources/list`.
      * Returns the union of all live {@link IMcpBehaviorInstance} resources.
+     *
+     * If a session grammar was resolved during `initialize`, resource `name`
+     * and `description` are patched before the response is sent.
      */
     resourcesList(req: JsonRpcRequest): JsonRpcResponse {
         const resources = Array.from(this._behaviors.values()).flatMap((i) => i.getResources());
-        return Mcp.resourcesListResult(req.id, resources);
+        const patched = this._sessionGrammar ? this._applyResourceGrammar(resources, this._sessionGrammar) : resources;
+        return Mcp.resourcesListResult(req.id, patched);
     }
 
     /**
@@ -356,6 +365,52 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      * - Individual property `description` fields inside `inputSchema.properties`
      *   (supports dot-notation for nested objects, e.g. `"patch.position"`)
      */
+    /**
+     * Applies a grammar layer on top of resource entries returned by behaviours.
+     * Returns new resource objects when there is at least one override; the
+     * originals (which may be cached) are never mutated.
+     *
+     * The grammar may override:
+     * - The resource `name`
+     * - The resource `description`
+     */
+    private _applyResourceGrammar(resources: McpResource[], grammar: McpGrammar): McpResource[] {
+        return resources.map((r) => {
+            const name = grammar.getResourceName(r.uri);
+            const description = grammar.getResourceDescription(r.uri);
+            if (name === undefined && description === undefined) return r;
+            return {
+                ...r,
+                name: name ?? r.name,
+                description: description ?? r.description,
+            };
+        });
+    }
+
+    /**
+     * Applies a grammar layer on top of resource template entries returned by
+     * behaviours. Returns new template objects when there is at least one
+     * override; the originals are never mutated.
+     *
+     * The grammar may override:
+     * - The template `name`
+     * - The template `description`
+     *
+     * Lookup key is the `uriTemplate` string.
+     */
+    private _applyTemplateGrammar(templates: McpResourceTemplate[], grammar: McpGrammar): McpResourceTemplate[] {
+        return templates.map((t) => {
+            const name = grammar.getResourceTemplateName(t.uriTemplate);
+            const description = grammar.getResourceTemplateDescription(t.uriTemplate);
+            if (name === undefined && description === undefined) return t;
+            return {
+                ...t,
+                name: name ?? t.name,
+                description: description ?? t.description,
+            };
+        });
+    }
+
     private _applyGrammar(tools: McpTool[], grammar: McpGrammar): McpTool[] {
         return tools.map((tool) => {
             const toolDesc = grammar.getToolDescription(tool.name);
