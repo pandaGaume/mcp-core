@@ -1,6 +1,6 @@
 {
     "name": "@cyanmycelium/mcp-core",
-    "version": "0.0.0",
+    "version": "0.1.0",
     "description": "Engine-neutral Model Context Protocol primitives: behaviors, adapters, grammars, server, transports, client and LLM bridge.",
     "type": "module",
     "license": "Apache-2.0",
@@ -71,7 +71,10 @@
         "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
         "lint:fix": "eslint \"src/**/*.ts\" \"tests/**/*.ts\" --fix",
         "format": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
-        "format:fix": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\""
+        "format:fix": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+        "release:patch": "npm version patch && git push --follow-tags",
+        "release:minor": "npm version minor && git push --follow-tags",
+        "release:major": "npm version major && git push --follow-tags"
     },
     "devDependencies": {
         "@types/node": "^20.11.0",
