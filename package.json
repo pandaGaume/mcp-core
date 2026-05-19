@@ -62,8 +62,8 @@
         }
     },
     "scripts": {
-        "build": "npm run clean && npm run compile",
-        "clean": "rimraf dist tsconfig.build.tsbuildinfo",
+        "build": "tsup",
+        "clean": "rimraf dist",
         "compile": "tsc -b tsconfig.build.json",
         "watch": "tsc -b tsconfig.build.json -w",
         "test": "vitest run",
@@ -86,6 +86,7 @@
         "prettier": "^3.2.0",
         "rimraf": "~6.0.1",
         "tslib": "^2.8.1",
+        "tsup": "^8.5.1",
         "typescript": "^5.4.0",
         "vitest": "^1.6.0"
     }

@@ -196,7 +196,7 @@ Save as `server.ts`, build, run with `node server.js`. Any MCP client (Claude De
 
 ## The Grammar layer
 
-A grammar is a set of **description overrides** that the server applies on top of the behavior's baseline schemas before sending them to the client. Grammars are layered: store overrides win over static, both override the behavior fallback.
+A grammar is a set of **description overrides** that the server applies on top of the behavior's baseline schemas before sending them to the client. The grammar layer is **modular**: multiple grammars can coexist in the same server and be selected per session by source (the calling client), by target (LLM provider, prompt dialect), or by locale. They are also **layered**: store overrides win over static, both override the behavior fallback.
 
 ### Static grammars selected per client
 
@@ -231,6 +231,39 @@ const server = new McpServerBuilder()
 ```
 
 Claude sees the short description, every other client sees the long one. **No conditional code in the behavior**.
+
+### Internationalization (i18n)
+
+Grammar selection is just a string key resolved per session, so the same mechanism that chooses a verbose vs concise variant also chooses a locale. Register one grammar per language and route by whatever is available (server-level config, client metadata, request headers in a custom transport):
+
+```ts
+const en = McpGrammar.fromJSON({
+    counter_increment: {
+        description: "Add `by` (default 1) to the counter and return its new value.",
+        properties: { by: "Increment amount." },
+    },
+});
+
+const fr = McpGrammar.fromJSON({
+    counter_increment: {
+        description: "Ajoute `by` (1 par défaut) au compteur et retourne sa nouvelle valeur.",
+        properties: { by: "Quantité à ajouter." },
+    },
+});
+
+const locale = (process.env.LOCALE ?? "en").toLowerCase();
+
+const server = new McpServerBuilder()
+    .withName("counter-demo")
+    .withTransport(new StdioTransport())
+    .withGrammar("en", en)
+    .withGrammar("fr", fr)
+    .withGrammarResolver(() => locale)
+    .register(new CounterBehavior(adapter))
+    .build();
+```
+
+Tool descriptions, property descriptions, and any other agent-visible string are localized through the same selection layer that handles per-client variants. Combine the two axes by returning a composite key (e.g. `claude-fr`) and registering a grammar for each.
 
 ### Runtime mutation by the agent itself
 
