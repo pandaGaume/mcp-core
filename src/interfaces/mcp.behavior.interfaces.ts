@@ -27,6 +27,13 @@ export enum ToolSupport {
 
 export interface McpToolResult {
     content: McpToolResultContent[];
+    /**
+     * Structured result data (MCP 2025-06-18). When set, clients receive the
+     * payload as a real object instead of having to re-parse a JSON `text`
+     * block. The same data should also appear serialized in {@link content}
+     * for backward compatibility with clients that predate structured content.
+     */
+    structuredContent?: { [key: string]: unknown };
     isError?: boolean;
 }
 

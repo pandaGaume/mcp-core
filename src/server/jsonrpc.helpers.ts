@@ -107,10 +107,15 @@ export const Mcp = {
     toolsListResult: (id: string | number, tools: McpTool[]): JsonRpcResponse => jsonRpcOk(id, { tools }),
 
     /**
-     * Wraps a `tools/call` result as a single text content block.
-     * Pass a pre-serialized JSON string for structured data.
+     * Wraps a `tools/call` result. Always carries the `content` blocks; also
+     * forwards `structuredContent` (MCP 2025-06-18) when the tool supplied it.
      */
-    toolCallResult: (id: string | number, result: McpToolResult): JsonRpcResponse => jsonRpcOk(id, { content: result.content, isError: result.isError ?? false }),
+    toolCallResult: (id: string | number, result: McpToolResult): JsonRpcResponse =>
+        jsonRpcOk(id, {
+            content: result.content,
+            ...(result.structuredContent !== undefined ? { structuredContent: result.structuredContent } : {}),
+            isError: result.isError ?? false,
+        }),
 
     // ── Server-sent notifications ─────────────────────────────────────────────
 
