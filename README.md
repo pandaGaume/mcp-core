@@ -196,7 +196,18 @@ Save as `server.ts`, build, run with `node server.js`. Any MCP client (Claude De
 
 ## The Grammar layer
 
-A grammar is a set of **description overrides** that the server applies on top of the behavior's baseline schemas before sending them to the client. The grammar layer is **modular**: multiple grammars can coexist in the same server and be selected per session by source (the calling client), by target (LLM provider, prompt dialect), or by locale. They are also **layered**: store overrides win over static, both override the behavior fallback.
+A grammar is a set of **description overrides** that the server applies on top of the behavior's baseline schemas before sending them to the client. The grammar layer is **modular**: multiple grammars can coexist in the same server and be selected per session by source (the calling client), by target (LLM provider, prompt dialect), or by locale.
+
+As of 0.3.0, four layers stack with explicit precedence (low → high):
+
+| # | Layer | Owner | When to use |
+|---|---|---|---|
+| 1 | Behavior | The behavior class (`_buildGrammars()`) | The behavior ships its own multi-language baselines — autonomous, no external file required |
+| 2 | Adapter | The behavior's adapter (`getGrammar(key)`) | Engine-specific binding nudges a few descriptions without forking the behavior |
+| 3 | Static | Application (`builder.withGrammar(key, g)`) | App-wide override at build time (replaces a baseline for every session) |
+| 4 | Store | Runtime (`McpGrammarStore`, via `McpGrammarBehavior`) | The agent (or operator) edits live descriptions per-profile, with `tools/list_changed` notifications |
+
+`McpGrammar.merge(...layers)` aggregates them in priority order: same-key entries in later layers win, missing entries cascade from earlier ones. The behavior is never required to know about static, store, or adapter layers — they merge transparently at the server.
 
 ### Static grammars selected per client
 
@@ -232,38 +243,61 @@ const server = new McpServerBuilder()
 
 Claude sees the short description, every other client sees the long one. **No conditional code in the behavior**.
 
-### Internationalization (i18n)
+### Behavior-owned multi-language baselines
 
-Grammar selection is just a string key resolved per session, so the same mechanism that chooses a verbose vs concise variant also chooses a locale. Register one grammar per language and route by whatever is available (server-level config, client metadata, request headers in a custom transport):
+Since 0.3.0, a behavior can ship its own grammars in code — one entry per `<agent>:<locale>[@version]` key it supports — without any external JSON files or broker layer. The application becomes autonomous on i18n; the broker is only needed if you want operator-editable overrides at runtime.
 
 ```ts
-const en = McpGrammar.fromJSON({
-    counter_increment: {
-        description: "Add `by` (default 1) to the counter and return its new value.",
-        properties: { by: "Increment amount." },
-    },
-});
+import { McpBehavior, McpGrammar } from "@cyanmycelium/mcp-core";
 
-const fr = McpGrammar.fromJSON({
-    counter_increment: {
-        description: "Ajoute `by` (1 par défaut) au compteur et retourne sa nouvelle valeur.",
-        properties: { by: "Quantité à ajouter." },
-    },
-});
+class CounterBehavior extends McpBehavior {
+    protected override _buildGrammars(): Map<string, McpGrammar> {
+        return new Map([
+            ["default:en", McpGrammar.fromJSON({
+                tools: { counter_increment: {
+                    description: "Add `by` (default 1) to the counter and return its new value.",
+                    properties: { by: "Increment amount." },
+                }},
+            })],
+            ["default:fr", McpGrammar.fromJSON({
+                tools: { counter_increment: {
+                    description: "Ajoute `by` (1 par défaut) au compteur et retourne sa nouvelle valeur.",
+                    properties: { by: "Quantité à ajouter." },
+                }},
+            })],
+            ["claude:fr", McpGrammar.fromJSON({
+                tools: { counter_increment: {
+                    description: "Incrément atomique du compteur. Renvoie la valeur post-mutation.",
+                }},
+            })],
+        ]);
+    }
+    // _buildTools(), executeToolAsync(), etc.
+}
+```
 
-const locale = (process.env.LOCALE ?? "en").toLowerCase();
+### The `withGrammarResolver` policy
 
+`withGrammarResolver` accepts two forms. Pass a custom function for arbitrary logic, or a declarative `GrammarResolverOptions` to use the built-in `<agent>:<locale>[@version]` composer:
+
+```ts
+import { McpServerBuilder } from "@cyanmycelium/mcp-core";
+
+// Declarative: locale + agent + (opt-in) version with progressive narrowing.
 const server = new McpServerBuilder()
     .withName("counter-demo")
     .withTransport(new StdioTransport())
-    .withGrammar("en", en)
-    .withGrammar("fr", fr)
-    .withGrammarResolver(() => locale)
     .register(new CounterBehavior(adapter))
+    .withGrammarResolver({
+        localeSource: (_, caps) => caps?.locale ?? process.env.LOCALE,
+        // versionFrom: (_, caps) => caps?.protocolVersion,   // opt-in
+    })
     .build();
 ```
 
-Tool descriptions, property descriptions, and any other agent-visible string are localized through the same selection layer that handles per-client variants. Combine the two axes by returning a composite key (e.g. `claude-fr`) and registering a grammar for each.
+For a Claude client requesting locale `fr-CA`, the resolver emits the chain `["claude:fr-ca", "claude:fr", "default:fr-ca", "default:fr", "claude:en", "default:en"]`. The server tries each in order and picks the first key for which at least one of the four layers has registered a grammar — so the behavior's `default:fr` matches even when a more specific Canadian-French variant is not shipped.
+
+The fallback narrowing order (`["version", "locale-region", "locale", "agent"]` by default) and key composition are both customizable; see `GrammarResolverOptions` for the full surface.
 
 ### Runtime mutation by the agent itself
 

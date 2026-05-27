@@ -8,4 +8,5 @@ export * from "./mcp.adapter";
 export * from "./mcp.grammar";
 export * from "./mcp.grammarStore";
 export * from "./mcp.grammarBehavior";
+export * from "./mcp.resolver";
 export * from "./llm/index";

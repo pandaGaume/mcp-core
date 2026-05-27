@@ -73,6 +73,13 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     private readonly _behaviors = new Map<string, IMcpBehavior>();
     private readonly _resourceIndex = new Map<string, IMcpRuntimeOperations>();
 
+    /**
+     * Unsubscribe handles for each behavior's `onGrammarsChanged` event.
+     * Cleared in {@link unregister} and {@link stop} so a hot-reloading
+     * behavior cannot leak its emitter into a stopped server.
+     */
+    private readonly _behaviorGrammarUnsubs = new Map<string, Unsubscribe>();
+
     // ── Grammar ──────────────────────────────────────────────────────────────
 
     /** Named grammars registered via the builder, keyed by a user-defined string. */
@@ -171,6 +178,8 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         this._clearIdleTimer();
         this._storeUnsubscribe?.();
         this._storeUnsubscribe = undefined;
+        for (const unsub of this._behaviorGrammarUnsubs.values()) unsub();
+        this._behaviorGrammarUnsubs.clear();
         this._transport?.close();
         this._transport = null;
         this._isRunning = false;
@@ -187,6 +196,12 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
                 for (const r of b.getResources()) {
                     this._resourceIndex.set(r.uri, b);
                 }
+                // Subscribe to per-behavior grammar invalidations so a
+                // hot-reload triggers a session re-merge + tools/list_changed.
+                if (b.onGrammarsChanged) {
+                    const unsub = b.onGrammarsChanged.subscribe(() => this._onBehaviorGrammarsChanged());
+                    this._behaviorGrammarUnsubs.set(b.namespace, unsub);
+                }
             }
             this._notifyResourcesListChanged();
         }
@@ -200,6 +215,8 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
                 for (const r of b.getResources()) {
                     this._resourceIndex.delete(r.uri);
                 }
+                this._behaviorGrammarUnsubs.get(b.namespace)?.();
+                this._behaviorGrammarUnsubs.delete(b.namespace);
             }
             this._notifyResourcesListChanged();
         }
@@ -222,22 +239,66 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         const params = req.params as { clientInfo?: McpClientInfo; capabilities?: McpClientCapabilities } | undefined;
 
         const clientInfo = params?.clientInfo ?? { name: "unknown", version: "0.0.0" };
+        const capabilities = params?.capabilities;
 
         const identity = this._initializer
-            ? this._initializer.initialize(clientInfo, params?.capabilities ?? {})
+            ? this._initializer.initialize(clientInfo, capabilities ?? {})
             : { protocolVersion: "2024-11-05", serverInfo: { name: this._name, version: "0.0.0" } };
 
-        // Resolve the session grammar by merging static (builder) and store grammars.
-        // Store grammars take priority over static ones (later layers win in merge).
-        const grammarKey = this._grammarResolver?.(clientInfo);
-        this._currentGrammarKey = grammarKey;
-        const staticGrammar = grammarKey ? this._grammars.get(grammarKey) : undefined;
-        const storeGrammar = grammarKey ? this._grammarStore?.get(grammarKey) : undefined;
-        this._sessionGrammar = staticGrammar || storeGrammar ? McpGrammar.merge(staticGrammar, storeGrammar) : undefined;
+        // Resolve the session grammar by walking the candidate chain
+        // returned by the resolver and picking the first key that yields
+        // a non-empty merge across the four layers
+        // (behavior → adapter → static → store).
+        const raw = this._grammarResolver?.(clientInfo, capabilities);
+        const candidates: readonly string[] = !raw ? [] : typeof raw === "string" ? [raw] : raw;
+
+        let matchedKey: string | undefined;
+        let matchedGrammar: McpGrammar | undefined;
+        for (const candidate of candidates) {
+            const merged = this._composeSessionGrammar(candidate);
+            if (merged) {
+                matchedKey = candidate;
+                matchedGrammar = merged;
+                break;
+            }
+        }
+        this._currentGrammarKey = matchedKey;
+        this._sessionGrammar = matchedGrammar;
 
         const result: McpInitializeResult = { ...identity, capabilities: this._deriveCapabilities() };
 
         return Mcp.initializeResult(req.id, result);
+    }
+
+    /**
+     * Builds the session grammar for a single candidate key by stacking
+     * the four layers in priority order (low → high):
+     *
+     *   1. Behavior-owned (per behavior, merged in registration order)
+     *   2. Adapter-owned (per behavior's adapter)
+     *   3. Builder-registered static grammar
+     *   4. Runtime grammar store
+     *
+     * Returns `undefined` when no layer contributes anything for this
+     * key, so the caller knows to try the next candidate in the chain.
+     */
+    private _composeSessionGrammar(key: string): McpGrammar | undefined {
+        const layers: McpGrammar[] = [];
+        for (const behavior of this._behaviors.values()) {
+            const bg = behavior.getGrammar?.(key);
+            if (bg) layers.push(bg);
+            // McpBehavior exposes its adapter via a `adapter` getter. Other
+            // IMcpBehavior implementations may not; probe defensively.
+            const adapter = (behavior as { adapter?: { getGrammar?(k: string): McpGrammar | undefined } }).adapter;
+            const ag = adapter?.getGrammar?.(key);
+            if (ag) layers.push(ag);
+        }
+        const staticGrammar = this._grammars.get(key);
+        if (staticGrammar) layers.push(staticGrammar);
+        const storeGrammar = this._grammarStore?.get(key);
+        if (storeGrammar) layers.push(storeGrammar);
+
+        return layers.length > 0 ? McpGrammar.merge(...layers) : undefined;
     }
 
     /**
@@ -680,17 +741,26 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     }
 
     /**
-     * Reacts to a grammar store mutation.  If the changed profile is the one
-     * currently active for this session, re-merges the session grammar and
-     * notifies the client so it can re-fetch `tools/list`.
+     * Reacts to a grammar store mutation. If the changed profile is the one
+     * currently active for this session, re-merges the session grammar
+     * from all four layers and notifies the client so it can re-fetch
+     * `tools/list`.
      */
     private _onGrammarStoreChanged(event: McpGrammarStoreChangeEvent): void {
         if (!this._currentGrammarKey || event.profileId !== this._currentGrammarKey) return;
+        this._sessionGrammar = this._composeSessionGrammar(this._currentGrammarKey);
+        this._notifyToolsListChanged();
+    }
 
-        const staticGrammar = this._grammars.get(this._currentGrammarKey);
-        const storeGrammar = this._grammarStore?.get(this._currentGrammarKey);
-        this._sessionGrammar = staticGrammar || storeGrammar ? McpGrammar.merge(staticGrammar, storeGrammar) : undefined;
-
+    /**
+     * Reacts to a behavior advertising that its grammar map changed
+     * (hot-reload, runtime mutation). Re-merges the session grammar for
+     * the currently active key and notifies the client. No-op when no
+     * session is active or the active key cannot be re-merged.
+     */
+    private _onBehaviorGrammarsChanged(): void {
+        if (!this._currentGrammarKey) return;
+        this._sessionGrammar = this._composeSessionGrammar(this._currentGrammarKey);
         this._notifyToolsListChanged();
     }
 

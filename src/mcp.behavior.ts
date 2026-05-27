@@ -1,6 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { IMcpBehaviorAdapter, McpResource, McpResourceContent, McpResourceTemplate, McpTool, McpToolResult, ToolSupport } from "./interfaces";
+import {
+    createEventEmitter,
+    IEventEmitter,
+    IEventSource,
+    IMcpBehaviorAdapter,
+    McpResource,
+    McpResourceContent,
+    McpResourceTemplate,
+    McpTool,
+    McpToolResult,
+    ToolSupport,
+} from "./interfaces";
 import { McpBehaviorBase, McpBehaviorOptions } from "./mcp.behaviorBase";
+import type { McpGrammar } from "./mcp.grammar";
 
 export abstract class McpBehavior extends McpBehaviorBase {
     private _resourceCache?: McpResource[];
@@ -9,6 +21,20 @@ export abstract class McpBehavior extends McpBehaviorBase {
     private _resourceContentPromiseCache = new Map<string, Promise<McpResourceContent | undefined>>();
     private _toolsCache?: McpTool[];
     private _adapter: IMcpBehaviorAdapter;
+
+    /**
+     * Memoized result of {@link _buildGrammars}. Invalidated by
+     * {@link _invalidateGrammars} when the source data changes (e.g. a
+     * subclass hot-reloads its grammar JSONs from disk).
+     */
+    private _grammarsCache?: ReadonlyMap<string, McpGrammar>;
+
+    /**
+     * Event source the server subscribes to so it can re-merge the session
+     * grammar and emit `notifications/tools/list_changed`. Lazily created
+     * so behaviors that never invalidate pay nothing.
+     */
+    private _onGrammarsChanged?: IEventEmitter<void>;
 
     public constructor(adapter: IMcpBehaviorAdapter, options: McpBehaviorOptions) {
         super(options);
@@ -19,21 +45,84 @@ export abstract class McpBehavior extends McpBehaviorBase {
         return this._adapter;
     }
 
-    // ── Grammar helpers ──────────────────────────────────────────────────────
+    // ── Grammar ──────────────────────────────────────────────────────────────
 
     /**
-     * Returns the fallback description for a tool.
-     * Grammar overrides are applied at the server level per session — behaviours
-     * only provide the baseline fallback strings.
+     * Subclasses override to declare every grammar key the behavior ships
+     * as its own baseline. The default implementation returns an empty
+     * map; the behavior then has no structured grammar and the server
+     * falls back to the inline strings produced by {@link _buildTools}.
+     *
+     * Called lazily on the first {@link getGrammar} / {@link listGrammarKeys}
+     * invocation and cached until {@link _invalidateGrammars} is called.
+     *
+     * @example
+     * protected override _buildGrammars(): Map<string, McpGrammar> {
+     *     return new Map([
+     *         ["default:en", McpGrammar.fromJSON(enData)],
+     *         ["default:fr", McpGrammar.fromJSON(frData)],
+     *         ["claude:fr",  McpGrammar.fromJSON(frTunedForClaude)],
+     *     ]);
+     * }
+     */
+    protected _buildGrammars(): Map<string, McpGrammar> {
+        return new Map();
+    }
+
+    private _getGrammarsMap(): ReadonlyMap<string, McpGrammar> {
+        if (!this._grammarsCache) this._grammarsCache = this._buildGrammars();
+        return this._grammarsCache;
+    }
+
+    /** Returns the behavior-owned grammar for `key`, or `undefined`. */
+    public getGrammar(key: string): McpGrammar | undefined {
+        return this._getGrammarsMap().get(key);
+    }
+
+    /** Every grammar key this behavior declares. */
+    public listGrammarKeys(): ReadonlyArray<string> {
+        return [...this._getGrammarsMap().keys()];
+    }
+
+    /**
+     * Drops the cached grammar map and the cached tools list. Call when
+     * the source data backing {@link _buildGrammars} changes (e.g. a JSON
+     * file was reloaded from disk). The server picks up the change via
+     * {@link onGrammarsChanged} and re-merges the session grammar.
+     */
+    protected _invalidateGrammars(): void {
+        this._grammarsCache = undefined;
+        this._toolsCache = undefined;
+        this._onGrammarsChanged?.emit();
+    }
+
+    /**
+     * Fires whenever {@link _invalidateGrammars} is called. The server
+     * subscribes to re-merge the active session grammar and notify
+     * connected clients (`tools/list_changed`).
+     */
+    public get onGrammarsChanged(): IEventSource<void> {
+        if (!this._onGrammarsChanged) this._onGrammarsChanged = createEventEmitter<void>();
+        return this._onGrammarsChanged;
+    }
+
+    // ── Description fallback hooks ───────────────────────────────────────────
+
+    /**
+     * Returns the fallback description for a tool. The behavior's
+     * structured baseline now comes from {@link _buildGrammars}; this
+     * hook is preserved for source compatibility with subclasses that
+     * override it. Default implementation returns the inline fallback.
      */
     protected _resolveToolDescription(_toolName: string, fallback: string): string {
         return fallback;
     }
 
     /**
-     * Returns the fallback description for a tool property.
-     * Grammar overrides are applied at the server level per session — behaviours
-     * only provide the baseline fallback strings.
+     * Returns the fallback description for a tool property. The
+     * behavior's structured baseline now comes from {@link _buildGrammars};
+     * this hook is preserved for source compatibility. Default
+     * implementation returns the inline fallback.
      */
     protected _resolvePropertyDescription(_toolName: string, _propertyName: string, fallback: string): string {
         return fallback;

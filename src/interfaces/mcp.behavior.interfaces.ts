@@ -1,4 +1,5 @@
 import { IEventSource } from "./eventSource";
+import type { McpGrammar } from "../mcp.grammar";
 import { McpResource, McpResourceContent, McpResourceTemplate, McpTool } from "./mcp.core.interfaces";
 
 // ── Tool Support ─────────────────────────────────────────────────────────────
@@ -128,6 +129,23 @@ export interface IMcpBehaviorAdapter extends IMcpRuntimeOperations {
      *          {@link ToolSupport.Full} (backwards-compatible default).
      */
     getToolSupport?(toolName: string, resourceType?: string): ToolSupport | undefined;
+
+    /**
+     * Returns the adapter-owned grammar layer for the given key, or
+     * `undefined` when the adapter does not ship overrides for that key.
+     *
+     * The adapter layer sits ABOVE the behavior baseline and BELOW the
+     * server's static `withGrammar()` registrations and runtime store.
+     * Use this when an engine binding (Babylon vs Cesium, ONNX-runtime vs
+     * MCU, etc.) needs to nudge a tool or property description without
+     * touching the behavior code.
+     *
+     * Keys are opaque strings produced by the application's
+     * {@link McpGrammarResolver} (e.g. `"en"`, `"claude:fr"`, `"v2:en"`).
+     * Implementations are expected to be O(1) on cached storage: the
+     * server reads this once per behavior per session at `initialize()`.
+     */
+    getGrammar?(key: string): McpGrammar | undefined;
 }
 
 /**
@@ -187,6 +205,36 @@ export interface IMcpBehavior extends IMcpRuntimeOperations, IMcpDesignOperation
 
     /** MIME type of content returned by `resources/read` for instances of this behavior. */
     readonly mimeType?: string;
+
+    /**
+     * Returns the behavior-owned grammar baseline for the given key, or
+     * `undefined` when the behavior does not ship a baseline for that key.
+     *
+     * "Key" is an opaque string the application's {@link McpGrammarResolver}
+     * produces from the connecting client identity (typical conventions:
+     * `"en"`, `"fr-CA"`, `"claude:fr"`, `"spk-v2:en"`). A behavior decides
+     * which keys it supports by populating its grammars at construction.
+     *
+     * The behavior layer is the LOWEST priority in the four-layer stack the
+     * server merges at `initialize()` time: `behavior → adapter → static →
+     * store`. Implementations are expected to be O(1) on cached storage.
+     */
+    getGrammar?(key: string): McpGrammar | undefined;
+
+    /**
+     * Lists every grammar key the behavior knows. Used by introspection
+     * tools (e.g. `McpGrammarBehavior.grammar_list`) and by application
+     * code that wants to negotiate a supported key with the client.
+     */
+    listGrammarKeys?(): ReadonlyArray<string>;
+
+    /**
+     * Fires when the behavior's grammar map changes (e.g. hot-reload from
+     * disk, runtime mutation). The server subscribes to this so it can
+     * re-merge the session grammar for the current key and emit
+     * `notifications/tools/list_changed`.
+     */
+    onGrammarsChanged?: IEventSource<void>;
 }
 
 // ── Builder ───────────────────────────────────────────────────────────────────

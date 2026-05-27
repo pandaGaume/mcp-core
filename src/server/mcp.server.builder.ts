@@ -1,6 +1,8 @@
 import type { IMessageTransport, IMcpBehavior, IMcpInitializer, IMcpServer, IMcpServerBuilder, IMcpServerHandlers, IMcpServerOptions, McpGrammarResolver } from "../interfaces";
 import { McpGrammar } from "../mcp.grammar";
 import type { McpGrammarStore } from "../mcp.grammarStore";
+import type { GrammarResolverOptions } from "../mcp.resolver";
+import { grammarResolverFromOptions } from "../mcp.resolver";
 import { McpServer } from "./mcp.server";
 
 /**
@@ -98,12 +100,35 @@ export class McpServerBuilder implements IMcpServerBuilder {
     }
 
     /**
-     * Sets the function that maps a connecting client to a grammar key.
-     * Called during the `initialize` handshake with the client's identity.
-     * The returned key is looked up in the grammars registered via {@link withGrammar}.
+     * Sets the policy that maps a connecting client to a grammar key, in
+     * one of two forms:
+     *
+     *   - **Custom function** ({@link McpGrammarResolver}): arbitrary logic
+     *     called during the `initialize` handshake with the client's
+     *     identity and negotiated capabilities. May return a single key,
+     *     a chain of candidate keys (most-specific first), or `undefined`.
+     *
+     *   - **Declarative options** ({@link GrammarResolverOptions}): the
+     *     built-in helper composes an `<agent>:<locale>` chain (plus an
+     *     optional `@version` suffix) with progressive narrowing. The
+     *     application supplies a `localeSource` and optionally a
+     *     `versionFrom`; everything else has sensible defaults.
+     *
+     * @example custom function
+     * ```typescript
+     * builder.withGrammarResolver((client) => `${client.name}:en`);
+     * ```
+     *
+     * @example declarative options
+     * ```typescript
+     * builder.withGrammarResolver({
+     *     localeSource: (_, caps) => caps?.locale,
+     *     versionFrom:  (_, caps) => caps?.protocolVersion,
+     * });
+     * ```
      */
-    withGrammarResolver(resolver: McpGrammarResolver): this {
-        this._grammarResolver = resolver;
+    withGrammarResolver(arg: McpGrammarResolver | GrammarResolverOptions): this {
+        this._grammarResolver = typeof arg === "function" ? arg : grammarResolverFromOptions(arg);
         return this;
     }
 

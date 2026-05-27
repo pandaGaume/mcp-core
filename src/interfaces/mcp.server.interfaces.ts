@@ -3,21 +3,43 @@ import type { IMcpBehavior } from "./mcp.behavior.interfaces";
 import type { IMessageTransport } from "./mcp.transport.interfaces";
 import type { McpGrammar } from "../mcp.grammar";
 import type { McpGrammarStore } from "../mcp.grammarStore";
+import type { GrammarResolverOptions } from "../mcp.resolver";
 
 /**
- * Maps {@link McpClientInfo} to a grammar key from the server's grammar map.
- * Return `undefined` to skip grammar patching for the connecting client.
+ * Maps a connecting {@link McpClientInfo} (plus optionally its negotiated
+ * capabilities) to a grammar key, or an ordered chain of candidate keys
+ * the server will try in turn until one yields a non-empty merged layer.
  *
- * @example
+ * - Returning `string` selects a single key. The server tries it and falls
+ *   back to inline tool descriptions if no layer matches.
+ * - Returning `readonly string[]` describes a most-specific-first fallback
+ *   chain. The server picks the first key for which at least one of the
+ *   four layers (behavior / adapter / static / store) registered a grammar.
+ * - Returning `undefined` skips grammar patching entirely.
+ *
+ * The second `capabilities` parameter exposes what the client declared
+ * during the `initialize` handshake. Use it for version-aware composition,
+ * e.g. `(_, caps) => caps?.protocolVersion ?? "v1"`.
+ *
+ * @example single-key form (backwards compatible with 0.2.x)
  * ```typescript
  * const resolver: McpGrammarResolver = (client) => {
  *     if (client.name.includes("claude")) return "concise";
- *     if (client.name.includes("gpt"))    return "verbose";
- *     return undefined; // fallback descriptions only
+ *     return undefined;
  * };
  * ```
+ *
+ * @example chain form (new in 0.3.x)
+ * ```typescript
+ * const resolver: McpGrammarResolver = (client) => [
+ *     "claude:fr-ca", "claude:fr", "default:fr-ca", "default:fr", "default:en",
+ * ];
+ * ```
+ *
+ * @see {@link grammarResolverFromOptions} for a helper that builds these
+ *      chains from a declarative {@link GrammarResolverOptions}.
  */
-export type McpGrammarResolver = (clientInfo: McpClientInfo) => string | undefined;
+export type McpGrammarResolver = (clientInfo: McpClientInfo, capabilities?: McpClientCapabilities) => string | readonly string[] | undefined;
 
 /**
  * Handles the domain-level MCP initialization handshake.
@@ -125,11 +147,35 @@ export interface IMcpServerBuilder {
     withGrammar(key: string, grammar: McpGrammar): IMcpServerBuilder;
 
     /**
-     * Sets the function that maps a connecting client to a grammar key.
-     * Called during the `initialize` handshake with the client's identity.
-     * The returned key is looked up in the grammars registered via {@link withGrammar}.
+     * Sets the policy that maps a connecting client to a grammar key.
+     *
+     * Two argument forms are accepted:
+     *
+     * - **Custom function**: pass an {@link McpGrammarResolver} when you need
+     *   arbitrary logic. Called during the `initialize` handshake with the
+     *   client's identity and negotiated capabilities. The returned key
+     *   (or chain of candidate keys) is looked up across the four grammar
+     *   layers (behavior / adapter / static / store).
+     *
+     * - **Options object**: pass a {@link GrammarResolverOptions} to use the
+     *   built-in helper that composes locale / agent / version dimensions
+     *   into a deterministic fallback chain. Equivalent to passing
+     *   `grammarResolverFromOptions(options)`.
+     *
+     * @example custom function
+     * ```typescript
+     * builder.withGrammarResolver((client) => `${client.name}:en`);
+     * ```
+     *
+     * @example declarative options
+     * ```typescript
+     * builder.withGrammarResolver({
+     *     localeSource: (_, caps) => caps?.locale,
+     *     versionFrom:  (_, caps) => caps?.protocolVersion,
+     * });
+     * ```
      */
-    withGrammarResolver(resolver: McpGrammarResolver): IMcpServerBuilder;
+    withGrammarResolver(resolver: McpGrammarResolver | GrammarResolverOptions): IMcpServerBuilder;
 
     /**
      * Provides a shared grammar store for runtime grammar mutations.

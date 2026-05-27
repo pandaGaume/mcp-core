@@ -1,4 +1,5 @@
 import { createEventEmitter, IEventEmitter, IEventSource, IMcpBehaviorAdapter, McpResourceContent, McpToolResult, ToolSupport } from "./interfaces";
+import type { McpGrammar } from "./mcp.grammar";
 
 export abstract class McpAdapterBase implements IMcpBehaviorAdapter {
     private _domain: string;
@@ -59,6 +60,24 @@ export abstract class McpAdapterBase implements IMcpBehaviorAdapter {
      * behavior interprets as {@link ToolSupport.Full} (all tools assumed fully supported).
      */
     public getToolSupport(_toolName: string, _resourceType?: string): ToolSupport | undefined {
+        return undefined;
+    }
+
+    // ── Grammar ─────────────────────────────────────────────────────────────
+
+    /**
+     * Returns the adapter-owned grammar override layer for `key`, or
+     * `undefined` when the adapter ships nothing for that key.
+     *
+     * The adapter layer sits ABOVE the behavior baseline and BELOW the
+     * builder static / runtime store layers. Use this when an engine
+     * binding (Babylon vs Cesium, ONNX-runtime vs MCU, etc.) needs to
+     * adjust a few descriptions without forking the behavior.
+     *
+     * Default implementation returns `undefined`. Subclasses override to
+     * declare per-key overrides.
+     */
+    public getGrammar(_key: string): McpGrammar | undefined {
         return undefined;
     }
 
