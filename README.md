@@ -6,8 +6,6 @@
 
 Engine-neutral primitives for building [Model Context Protocol](https://modelcontextprotocol.io/) servers and clients in TypeScript.
 
-> Status: pre-release (v0.0.0). Public API ships in v0.1.0.
-
 ---
 
 ## Why this package
