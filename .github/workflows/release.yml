@@ -33,6 +33,8 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run build
+      # Type-checks the test files too, which `build` skips.
+      - run: npm run typecheck
       - run: npm test
       - run: npm publish --access public --provenance
       - name: Dump npm debug log on failure

@@ -66,6 +66,7 @@
         "clean": "rimraf dist",
         "compile": "tsc -b tsconfig.build.json",
         "watch": "tsc -b tsconfig.build.json -w",
+        "typecheck": "tsc -p tsconfig.json --noEmit",
         "test": "vitest run",
         "test:watch": "vitest",
         "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
