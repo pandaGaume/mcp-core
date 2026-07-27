@@ -18,6 +18,8 @@
 
 /** Describes one tool inside a serialised grammar. */
 export type McpGrammarToolEntry = {
+    /** Override for the tool's display title (what a UI shows instead of the name). */
+    title?: string;
     /** Tool-level description (what the tool does). */
     description?: string;
     /** Per-property descriptions keyed by property name (supports dot-notation, e.g. "patch.position"). */
@@ -26,16 +28,20 @@ export type McpGrammarToolEntry = {
 
 /** Describes one resource inside a serialised grammar. */
 export type McpGrammarResourceEntry = {
-    /** Override for the resource's display name. */
+    /** Override for the resource's programmatic name. */
     name?: string;
+    /** Override for the resource's display title. */
+    title?: string;
     /** Override for the resource's description. */
     description?: string;
 };
 
 /** Describes one resource template inside a serialised grammar. */
 export type McpGrammarTemplateEntry = {
-    /** Override for the template's display name. */
+    /** Override for the template's programmatic name. */
     name?: string;
+    /** Override for the template's display title. */
+    title?: string;
     /** Override for the template's description. */
     description?: string;
 };
@@ -109,7 +115,16 @@ export class McpGrammar {
         );
     }
 
-    // ── Tool description ─────────────────────────────────────────────────────
+    // ── Tool title / description ─────────────────────────────────────────────
+
+    getToolTitle(toolName: string): string | undefined {
+        return this._tools.get(toolName)?.title;
+    }
+
+    setToolTitle(toolName: string, title: string): void {
+        const entry = this._ensureToolEntry(toolName);
+        entry.title = title;
+    }
 
     getToolDescription(toolName: string): string | undefined {
         return this._tools.get(toolName)?.description;
@@ -132,7 +147,7 @@ export class McpGrammar {
         entry.properties[propertyName] = description;
     }
 
-    // ── Resource name / description ──────────────────────────────────────────
+    // ── Resource name / title / description ──────────────────────────────────
 
     getResourceName(uri: string): string | undefined {
         return this._resources.get(uri)?.name;
@@ -141,6 +156,15 @@ export class McpGrammar {
     setResourceName(uri: string, name: string): void {
         const entry = this._ensureResourceEntry(uri);
         entry.name = name;
+    }
+
+    getResourceTitle(uri: string): string | undefined {
+        return this._resources.get(uri)?.title;
+    }
+
+    setResourceTitle(uri: string, title: string): void {
+        const entry = this._ensureResourceEntry(uri);
+        entry.title = title;
     }
 
     getResourceDescription(uri: string): string | undefined {
@@ -152,7 +176,7 @@ export class McpGrammar {
         entry.description = description;
     }
 
-    // ── Resource template name / description ─────────────────────────────────
+    // ── Resource template name / title / description ─────────────────────────
 
     getResourceTemplateName(uriTemplate: string): string | undefined {
         return this._templates.get(uriTemplate)?.name;
@@ -161,6 +185,15 @@ export class McpGrammar {
     setResourceTemplateName(uriTemplate: string, name: string): void {
         const entry = this._ensureTemplateEntry(uriTemplate);
         entry.name = name;
+    }
+
+    getResourceTemplateTitle(uriTemplate: string): string | undefined {
+        return this._templates.get(uriTemplate)?.title;
+    }
+
+    setResourceTemplateTitle(uriTemplate: string, title: string): void {
+        const entry = this._ensureTemplateEntry(uriTemplate);
+        entry.title = title;
     }
 
     getResourceTemplateDescription(uriTemplate: string): string | undefined {
@@ -218,6 +251,7 @@ export class McpGrammar {
             // Tools
             for (const [toolName, src] of g._tools) {
                 const dest = result._ensureToolEntry(toolName);
+                if (src.title !== undefined) dest.title = src.title;
                 if (src.description !== undefined) dest.description = src.description;
                 if (src.properties) {
                     if (!dest.properties) dest.properties = {};
@@ -231,6 +265,7 @@ export class McpGrammar {
             for (const [uri, src] of g._resources) {
                 const dest = result._ensureResourceEntry(uri);
                 if (src.name !== undefined) dest.name = src.name;
+                if (src.title !== undefined) dest.title = src.title;
                 if (src.description !== undefined) dest.description = src.description;
             }
 
@@ -238,6 +273,7 @@ export class McpGrammar {
             for (const [tpl, src] of g._templates) {
                 const dest = result._ensureTemplateEntry(tpl);
                 if (src.name !== undefined) dest.name = src.name;
+                if (src.title !== undefined) dest.title = src.title;
                 if (src.description !== undefined) dest.description = src.description;
             }
         }
@@ -281,6 +317,7 @@ export class McpGrammar {
 
     private static _cloneToolEntry(entry: McpGrammarToolEntry): McpGrammarToolEntry {
         const clone: McpGrammarToolEntry = {};
+        if (entry.title !== undefined) clone.title = entry.title;
         if (entry.description !== undefined) clone.description = entry.description;
         if (entry.properties) clone.properties = { ...entry.properties };
         return clone;
@@ -289,6 +326,7 @@ export class McpGrammar {
     private static _cloneResourceEntry(entry: McpGrammarResourceEntry): McpGrammarResourceEntry {
         const clone: McpGrammarResourceEntry = {};
         if (entry.name !== undefined) clone.name = entry.name;
+        if (entry.title !== undefined) clone.title = entry.title;
         if (entry.description !== undefined) clone.description = entry.description;
         return clone;
     }
@@ -296,6 +334,7 @@ export class McpGrammar {
     private static _cloneTemplateEntry(entry: McpGrammarTemplateEntry): McpGrammarTemplateEntry {
         const clone: McpGrammarTemplateEntry = {};
         if (entry.name !== undefined) clone.name = entry.name;
+        if (entry.title !== undefined) clone.title = entry.title;
         if (entry.description !== undefined) clone.description = entry.description;
         return clone;
     }

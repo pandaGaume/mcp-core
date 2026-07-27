@@ -17,7 +17,6 @@ import type { McpGrammarStore, McpGrammarStoreChangeEvent } from "../mcp.grammar
 import { negotiateProtocolVersion } from "../mcp.protocol";
 import { McpToolResults } from "../mcp.toolResult";
 import { DirectTransport } from "./direct.transport";
-import { MultiplexTransport } from "./multiplex.transport";
 import { Mcp } from "./jsonrpc.helpers";
 
 /**
@@ -453,31 +452,25 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     // -------------------------------------------------------------------------
 
     /**
-     * Applies a grammar layer on top of tool schemas returned by behaviours.
-     * Returns new tool objects — the originals (which may be cached) are never mutated.
-     *
-     * For each tool the grammar may override:
-     * - The tool-level `description`
-     * - Individual property `description` fields inside `inputSchema.properties`
-     *   (supports dot-notation for nested objects, e.g. `"patch.position"`)
-     */
-    /**
      * Applies a grammar layer on top of resource entries returned by behaviours.
      * Returns new resource objects when there is at least one override; the
      * originals (which may be cached) are never mutated.
      *
      * The grammar may override:
      * - The resource `name`
+     * - The resource `title`
      * - The resource `description`
      */
     private _applyResourceGrammar(resources: McpResource[], grammar: McpGrammar): McpResource[] {
         return resources.map((r) => {
             const name = grammar.getResourceName(r.uri);
+            const title = grammar.getResourceTitle(r.uri);
             const description = grammar.getResourceDescription(r.uri);
-            if (name === undefined && description === undefined) return r;
+            if (name === undefined && title === undefined && description === undefined) return r;
             return {
                 ...r,
                 name: name ?? r.name,
+                title: title ?? r.title,
                 description: description ?? r.description,
             };
         });
@@ -490,6 +483,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      *
      * The grammar may override:
      * - The template `name`
+     * - The template `title`
      * - The template `description`
      *
      * Lookup key is the `uriTemplate` string.
@@ -497,29 +491,42 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     private _applyTemplateGrammar(templates: McpResourceTemplate[], grammar: McpGrammar): McpResourceTemplate[] {
         return templates.map((t) => {
             const name = grammar.getResourceTemplateName(t.uriTemplate);
+            const title = grammar.getResourceTemplateTitle(t.uriTemplate);
             const description = grammar.getResourceTemplateDescription(t.uriTemplate);
-            if (name === undefined && description === undefined) return t;
+            if (name === undefined && title === undefined && description === undefined) return t;
             return {
                 ...t,
                 name: name ?? t.name,
+                title: title ?? t.title,
                 description: description ?? t.description,
             };
         });
     }
 
+    /**
+     * Applies a grammar layer on top of tool schemas returned by behaviours.
+     * Returns new tool objects — the originals (which may be cached) are never mutated.
+     *
+     * For each tool the grammar may override:
+     * - The tool-level `title` and `description`
+     * - Individual property `description` fields inside `inputSchema.properties`
+     *   (supports dot-notation for nested objects, e.g. `"patch.position"`)
+     */
     private _applyGrammar(tools: McpTool[], grammar: McpGrammar): McpTool[] {
         return tools.map((tool) => {
+            const toolTitle = grammar.getToolTitle(tool.name);
             const toolDesc = grammar.getToolDescription(tool.name);
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const schema = tool.inputSchema as any;
             const patchedSchema = schema?.properties ? this._patchProperties(tool.name, schema, grammar) : schema;
 
-            if (!toolDesc && patchedSchema === schema) {
+            if (!toolTitle && !toolDesc && patchedSchema === schema) {
                 return tool; // nothing to patch
             }
 
             return {
                 ...tool,
+                title: toolTitle ?? tool.title,
                 description: toolDesc ?? tool.description,
                 inputSchema: patchedSchema,
             };
@@ -605,12 +612,11 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
                 void this._handleMessage(data);
             };
 
-            // Activate or connect the transport depending on its type.
-            // MultiplexTransport uses activate(); all others (DirectTransport,
-            // LoopbackTransport, custom) use connect().
-            if (transport instanceof MultiplexTransport) {
-                transport.activate();
-            } else if ("connect" in transport && typeof (transport as { connect: unknown }).connect === "function") {
+            // Open the transport. `connect()` is not part of IMessageTransport —
+            // some transports are handed over already open — so probe for it
+            // rather than testing for a specific class, which would tie the
+            // server to one transport implementation.
+            if ("connect" in transport && typeof (transport as { connect: unknown }).connect === "function") {
                 (transport as { connect(): void }).connect();
             }
         });

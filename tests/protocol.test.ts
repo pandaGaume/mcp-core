@@ -45,6 +45,55 @@ function initRequest(protocolVersion?: string): JsonRpcRequest {
     };
 }
 
+/**
+ * A transport of a class neither the server nor the client knows about, which
+ * only advertises `connect()`. Counts how many times it was opened.
+ */
+class CountingTransport implements IMessageTransport {
+    public connectCalls = 0;
+
+    constructor(private readonly _inner: IMessageTransport) {}
+
+    get isOpen(): boolean {
+        return this._inner.isOpen;
+    }
+    get onMessage(): ((data: string) => void) | null {
+        return this._inner.onMessage;
+    }
+    set onMessage(handler: ((data: string) => void) | null) {
+        this._inner.onMessage = handler;
+    }
+    get onOpen(): (() => void) | null {
+        return this._inner.onOpen;
+    }
+    set onOpen(handler: (() => void) | null) {
+        this._inner.onOpen = handler;
+    }
+    get onClose(): (() => void) | null {
+        return this._inner.onClose;
+    }
+    set onClose(handler: (() => void) | null) {
+        this._inner.onClose = handler;
+    }
+    get onError(): ((error: Error) => void) | null {
+        return this._inner.onError;
+    }
+    set onError(handler: ((error: Error) => void) | null) {
+        this._inner.onError = handler;
+    }
+
+    send(data: string): void {
+        this._inner.send(data);
+    }
+    close(): void {
+        this._inner.close();
+    }
+    connect(): void {
+        this.connectCalls++;
+        (this._inner as IMessageTransport & { connect(): void }).connect();
+    }
+}
+
 /** Lets queued microtasks and the loopback delivery hops settle. */
 function flush(): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, 10));
@@ -325,6 +374,22 @@ describe("McpClient inbound requests", () => {
         expect(replies).toHaveLength(2);
         expect(replies[0]).toEqual({ jsonrpc: "2.0", id: 900, result: {} });
         expect((replies[1] as { error: { code: number } }).error.code).toBe(-32601);
+    });
+
+    it("opens a transport through connect() without knowing its class", async () => {
+        // The server and client must never branch on a concrete transport type:
+        // that coupling is what would keep broker-specific transports from
+        // living outside this package.
+        const [serverEnd, clientEnd] = LoopbackTransport.createPair();
+        const wrapped = new CountingTransport(clientEnd);
+
+        await new McpServerBuilder().withName("s").withTransport(serverEnd).build().start();
+
+        const client = new McpClient({ name: "c", version: "1.0.0" }, wrapped);
+        await client.connect();
+
+        expect(wrapped.connectCalls).toBe(1);
+        expect(client.isConnected).toBe(true);
     });
 
     it("resolves ping() against a live server", async () => {

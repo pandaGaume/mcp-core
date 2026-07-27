@@ -13,7 +13,6 @@ import type {
 } from "../interfaces";
 import { createEventEmitter, IEventEmitter } from "../interfaces";
 import { isProtocolVersionSupported, MCP_LATEST_PROTOCOL_VERSION } from "../mcp.protocol";
-import { MultiplexTransport } from "../server/multiplex.transport";
 
 // ---------------------------------------------------------------------------
 // Pending request tracker
@@ -157,10 +156,10 @@ export class McpClient implements IMcpClient {
                     .catch(reject);
             };
 
-            // Open the transport
-            if (this._transport instanceof MultiplexTransport) {
-                this._transport.activate();
-            } else if ("connect" in this._transport && typeof (this._transport as { connect: unknown }).connect === "function") {
+            // Open the transport. `connect()` is not part of IMessageTransport —
+            // some transports are handed over already open — so probe for it
+            // rather than testing for a specific class.
+            if ("connect" in this._transport && typeof (this._transport as { connect: unknown }).connect === "function") {
                 (this._transport as { connect(): void }).connect();
             }
         });

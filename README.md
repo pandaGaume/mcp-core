@@ -238,6 +238,16 @@ As of 0.3.0, four layers stack with explicit precedence (low → high):
 
 `McpGrammar.merge(...layers)` aggregates them in priority order: same-key entries in later layers win, missing entries cascade from earlier ones. The behavior is never required to know about static, store, or adapter layers — they merge transparently at the server.
 
+What a grammar may override, per session:
+
+| Target | Fields | Lookup key |
+|---|---|---|
+| Tool | `title`, `description`, and each `inputSchema` property description (dot-notation for nested objects, e.g. `"patch.position"`) | tool name |
+| Resource | `name`, `title`, `description` | resource `uri` |
+| Resource template | `name`, `title`, `description` | `uriTemplate` |
+
+`title` is the display name a client shows instead of the programmatic `name`, so it is the field to localise; `name` stays stable because clients and models address tools by it.
+
 ### Static grammars selected per client
 
 ```ts

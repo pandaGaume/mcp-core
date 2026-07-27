@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { McpServer, McpToolResults } from "../src";
+import { McpGrammar, McpServer, McpToolResults } from "../src";
 import { Mcp } from "../src/server/jsonrpc.helpers";
 import type { IMcpBehavior, JsonRpcRequest, McpResource, McpResourceContent, McpResourceTemplate, McpTool, McpToolResult } from "../src/interfaces";
 
@@ -186,6 +186,76 @@ describe("tool result content blocks", () => {
 
         const withoutMeta = Mcp.toolCallResult(1, { content: [{ type: "text", text: "ok" }] });
         expect(withoutMeta.result as object).not.toHaveProperty("_meta");
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Grammar overrides of the display title
+// ---------------------------------------------------------------------------
+
+describe("grammar title overrides", () => {
+    function serverWithGrammar(grammar: McpGrammar): McpServer {
+        const server = new McpServer("s", "", {}, undefined, undefined, new Map([["fr", grammar]]), () => "fr");
+        server.register(
+            new SchemaBehavior(
+                [{ uri: "app://counter", name: "counter", title: "Counter" }],
+                [{ uriTemplate: "app://counter/{id}", name: "counters", title: "Counters" }],
+                [{ name: "counter_increment", title: "Increment", description: "Adds one", inputSchema: { type: "object" } }]
+            )
+        );
+        server.initialize(request("initialize", { clientInfo: { name: "c", version: "1.0.0" } }));
+        return server;
+    }
+
+    it("localises a tool title alongside its description", () => {
+        const grammar = new McpGrammar();
+        grammar.setToolTitle("counter_increment", "Incrémenter");
+        grammar.setToolDescription("counter_increment", "Ajoute un");
+
+        const listed = (serverWithGrammar(grammar).toolsList(request("tools/list")).result as { tools: McpTool[] }).tools;
+        expect(listed[0].title).toBe("Incrémenter");
+        expect(listed[0].description).toBe("Ajoute un");
+        expect(listed[0].name).toBe("counter_increment");
+    });
+
+    it("leaves the inline title in place when the grammar says nothing", () => {
+        const grammar = new McpGrammar();
+        grammar.setToolDescription("counter_increment", "Ajoute un");
+
+        const listed = (serverWithGrammar(grammar).toolsList(request("tools/list")).result as { tools: McpTool[] }).tools;
+        expect(listed[0].title).toBe("Increment");
+    });
+
+    it("localises resource and template titles", () => {
+        const grammar = new McpGrammar();
+        grammar.setResourceTitle("app://counter", "Compteur");
+        grammar.setResourceTemplateTitle("app://counter/{id}", "Compteurs");
+        const server = serverWithGrammar(grammar);
+
+        const resources = (server.resourcesList(request("resources/list")).result as { resources: McpResource[] }).resources;
+        const templates = (server.resourcesTemplatesList(request("resources/templates/list")).result as { resourceTemplates: McpResourceTemplate[] }).resourceTemplates;
+
+        expect(resources[0].title).toBe("Compteur");
+        expect(resources[0].name).toBe("counter");
+        expect(templates[0].title).toBe("Compteurs");
+    });
+
+    it("round-trips titles through JSON and merge", () => {
+        const base = McpGrammar.fromJSON({
+            tools: { t: { title: "Base", description: "base" } },
+            resources: { "app://r": { name: "r", title: "Base R" } },
+            templates: { "app://t/{id}": { title: "Base T" } },
+        });
+        const overlay = new McpGrammar();
+        overlay.setToolTitle("t", "Overlay");
+
+        const merged = McpGrammar.merge(base, overlay);
+        expect(merged.getToolTitle("t")).toBe("Overlay");
+        expect(merged.getToolDescription("t")).toBe("base");
+        expect(merged.getResourceTitle("app://r")).toBe("Base R");
+        expect(merged.getResourceTemplateTitle("app://t/{id}")).toBe("Base T");
+
+        expect(McpGrammar.fromJSON(merged.toJSON()).getToolTitle("t")).toBe("Overlay");
     });
 });
 

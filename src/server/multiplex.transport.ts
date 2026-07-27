@@ -219,8 +219,6 @@ export class MultiplexTransport implements IMessageTransport {
 
     /**
      * Registers this transport with the shared socket.
-     * Called internally by {@link McpServer._connect} when it detects that
-     * the transport is not a {@link DirectTransport}.
      *
      * Safe to call multiple times — subsequent calls are no-ops.
      */
@@ -229,6 +227,17 @@ export class MultiplexTransport implements IMessageTransport {
             this._registered = true;
             this._socket.register(this._name, this);
         }
+    }
+
+    /**
+     * Opens the transport, the same way every other transport does.
+     *
+     * An alias of {@link activate} so callers never have to special-case this
+     * class: an MCP server or client just calls `connect()` on whatever
+     * transport it was handed.
+     */
+    connect(): void {
+        this.activate();
     }
 
     send(data: string): void {
