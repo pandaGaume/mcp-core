@@ -13,6 +13,9 @@ class LoopbackEnd implements IMessageTransport {
     _peer!: LoopbackEnd;
     private _open = false;
 
+    /** Whether `onOpen` has already been dispatched for this end since it opened. */
+    private _opened = false;
+
     onMessage: ((data: string) => void) | null = null;
     onOpen: (() => void) | null = null;
     onClose: (() => void) | null = null;
@@ -23,15 +26,25 @@ class LoopbackEnd implements IMessageTransport {
     }
 
     /**
-     * Opens this end and its peer. Both sides receive `onOpen` asynchronously.
-     * Safe to call multiple times — subsequent calls are no-ops.
+     * Opens this end and its peer, and dispatches `onOpen` asynchronously.
+     *
+     * Each end is notified once. The peer is only notified here if it already
+     * registered a handler; otherwise its notification waits until it calls
+     * `connect()` itself. That is what makes the usual pairing work whichever
+     * side opens first: a server started before its client still lets the
+     * client run its handshake when it connects later.
      */
     connect(): void {
-        if (this._open) return;
         this._open = true;
         this._peer._open = true;
+        this._notifyOpen();
+        if (this._peer.onOpen) this._peer._notifyOpen();
+    }
+
+    private _notifyOpen(): void {
+        if (this._opened) return;
+        this._opened = true;
         queueMicrotask(() => this.onOpen?.());
-        queueMicrotask(() => this._peer.onOpen?.());
     }
 
     send(data: string): void {
@@ -44,6 +57,9 @@ class LoopbackEnd implements IMessageTransport {
         if (!this._open) return;
         this._open = false;
         this._peer._open = false;
+        // Allow a later connect() to notify both ends again.
+        this._opened = false;
+        this._peer._opened = false;
         queueMicrotask(() => this.onClose?.());
         queueMicrotask(() => this._peer.onClose?.());
     }

@@ -14,8 +14,9 @@ import type {
 import type { Unsubscribe } from "../interfaces/eventSource";
 import { McpGrammar } from "../mcp.grammar";
 import type { McpGrammarStore, McpGrammarStoreChangeEvent } from "../mcp.grammarStore";
+import { negotiateProtocolVersion } from "../mcp.protocol";
+import { McpToolResults } from "../mcp.toolResult";
 import { DirectTransport } from "./direct.transport";
-import { MultiplexTransport } from "./multiplex.transport";
 import { Mcp } from "./jsonrpc.helpers";
 
 /**
@@ -62,6 +63,12 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      * the session handshake is complete and the client is ready to issue requests.
      */
     private _sessionReady = false;
+
+    /**
+     * The MCP protocol revision agreed during the last `initialize` handshake.
+     * Reset on disconnect so a reconnecting client renegotiates from scratch.
+     */
+    private _protocolVersion: string | undefined;
 
     /** Counts consecutive failed reconnection attempts; reset on successful open. */
     private _reconnectAttempts = 0;
@@ -153,6 +160,14 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         return this._sessionReady;
     }
 
+    /**
+     * The MCP protocol revision negotiated for the current session, or
+     * `undefined` before the first `initialize` and after a disconnect.
+     */
+    get protocolVersion(): string | undefined {
+        return this._protocolVersion;
+    }
+
     // -------------------------------------------------------------------------
     // IMcpServer — lifecycle
     // -------------------------------------------------------------------------
@@ -229,21 +244,29 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
 
     /**
      * Handles the `initialize` handshake.
-     * Delegates identity/version to {@link IMcpInitializer} if one was provided,
+     * Delegates identity to {@link IMcpInitializer} if one was provided,
      * then merges with capabilities derived from registered behaviors.
+     *
+     * The protocol revision is negotiated here: the revision the client asked
+     * for is echoed back when this server supports it, otherwise the newest
+     * supported revision is returned, as the MCP lifecycle spec requires. An
+     * initializer that returns an explicit `protocolVersion` pins the answer
+     * and skips negotiation.
      *
      * Also resolves the session grammar from the grammar map using the
      * configured {@link McpGrammarResolver}, if any.
      */
     initialize(req: JsonRpcRequest): JsonRpcResponse {
-        const params = req.params as { clientInfo?: McpClientInfo; capabilities?: McpClientCapabilities } | undefined;
+        const params = req.params as { protocolVersion?: string; clientInfo?: McpClientInfo; capabilities?: McpClientCapabilities } | undefined;
 
         const clientInfo = params?.clientInfo ?? { name: "unknown", version: "0.0.0" };
         const capabilities = params?.capabilities;
 
-        const identity = this._initializer
-            ? this._initializer.initialize(clientInfo, capabilities ?? {})
-            : { protocolVersion: "2024-11-05", serverInfo: { name: this._name, version: "0.0.0" } };
+        const identity = this._initializer ? this._initializer.initialize(clientInfo, capabilities ?? {}) : { serverInfo: { name: this._name, version: "0.0.0" } };
+
+        // An initializer may pin a revision; otherwise negotiate against the
+        // set this server accepts.
+        this._protocolVersion = identity.protocolVersion ?? negotiateProtocolVersion(params?.protocolVersion, this._options.protocolVersions);
 
         // Resolve the session grammar by walking the candidate chain
         // returned by the resolver and picking the first key that yields
@@ -265,9 +288,17 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         this._currentGrammarKey = matchedKey;
         this._sessionGrammar = matchedGrammar;
 
-        const result: McpInitializeResult = { ...identity, capabilities: this._deriveCapabilities() };
+        const result: McpInitializeResult = { ...identity, protocolVersion: this._protocolVersion, capabilities: this._deriveCapabilities() };
 
         return Mcp.initializeResult(req.id, result);
+    }
+
+    /**
+     * Handles `ping`. The spec requires an empty result and a prompt answer:
+     * the peer uses it to tell a live connection from a stale one.
+     */
+    ping(req: JsonRpcRequest): JsonRpcResponse {
+        return Mcp.pingResult(req.id);
     }
 
     /**
@@ -385,6 +416,9 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      *    Behaviors should declare `uri` as a required field in their tool `inputSchema`.
      * 2. Otherwise, scan all instances for the first one that declares the tool (fallback
      *    for single-instance scenarios where a URI is not needed).
+     *
+     * A name no behavior declares is reported as an unknown tool (`-32602`),
+     * which is the protocol error the spec defines for it.
      */
     async toolsCallAsync(req: JsonRpcRequest): Promise<JsonRpcResponse> {
         const params = req.params as { name?: string; arguments?: Record<string, unknown> } | undefined;
@@ -410,7 +444,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
                 return this._callTool(req, behavior, "", name, args);
             }
         }
-        return Mcp.invalidParams(req.id, "Missing required parameter: uri");
+        return Mcp.toolNotFound(req.id, name);
     }
 
     // -------------------------------------------------------------------------
@@ -418,31 +452,25 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     // -------------------------------------------------------------------------
 
     /**
-     * Applies a grammar layer on top of tool schemas returned by behaviours.
-     * Returns new tool objects — the originals (which may be cached) are never mutated.
-     *
-     * For each tool the grammar may override:
-     * - The tool-level `description`
-     * - Individual property `description` fields inside `inputSchema.properties`
-     *   (supports dot-notation for nested objects, e.g. `"patch.position"`)
-     */
-    /**
      * Applies a grammar layer on top of resource entries returned by behaviours.
      * Returns new resource objects when there is at least one override; the
      * originals (which may be cached) are never mutated.
      *
      * The grammar may override:
      * - The resource `name`
+     * - The resource `title`
      * - The resource `description`
      */
     private _applyResourceGrammar(resources: McpResource[], grammar: McpGrammar): McpResource[] {
         return resources.map((r) => {
             const name = grammar.getResourceName(r.uri);
+            const title = grammar.getResourceTitle(r.uri);
             const description = grammar.getResourceDescription(r.uri);
-            if (name === undefined && description === undefined) return r;
+            if (name === undefined && title === undefined && description === undefined) return r;
             return {
                 ...r,
                 name: name ?? r.name,
+                title: title ?? r.title,
                 description: description ?? r.description,
             };
         });
@@ -455,6 +483,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      *
      * The grammar may override:
      * - The template `name`
+     * - The template `title`
      * - The template `description`
      *
      * Lookup key is the `uriTemplate` string.
@@ -462,29 +491,42 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     private _applyTemplateGrammar(templates: McpResourceTemplate[], grammar: McpGrammar): McpResourceTemplate[] {
         return templates.map((t) => {
             const name = grammar.getResourceTemplateName(t.uriTemplate);
+            const title = grammar.getResourceTemplateTitle(t.uriTemplate);
             const description = grammar.getResourceTemplateDescription(t.uriTemplate);
-            if (name === undefined && description === undefined) return t;
+            if (name === undefined && title === undefined && description === undefined) return t;
             return {
                 ...t,
                 name: name ?? t.name,
+                title: title ?? t.title,
                 description: description ?? t.description,
             };
         });
     }
 
+    /**
+     * Applies a grammar layer on top of tool schemas returned by behaviours.
+     * Returns new tool objects — the originals (which may be cached) are never mutated.
+     *
+     * For each tool the grammar may override:
+     * - The tool-level `title` and `description`
+     * - Individual property `description` fields inside `inputSchema.properties`
+     *   (supports dot-notation for nested objects, e.g. `"patch.position"`)
+     */
     private _applyGrammar(tools: McpTool[], grammar: McpGrammar): McpTool[] {
         return tools.map((tool) => {
+            const toolTitle = grammar.getToolTitle(tool.name);
             const toolDesc = grammar.getToolDescription(tool.name);
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const schema = tool.inputSchema as any;
             const patchedSchema = schema?.properties ? this._patchProperties(tool.name, schema, grammar) : schema;
 
-            if (!toolDesc && patchedSchema === schema) {
+            if (!toolTitle && !toolDesc && patchedSchema === schema) {
                 return tool; // nothing to patch
             }
 
             return {
                 ...tool,
+                title: toolTitle ?? tool.title,
                 description: toolDesc ?? tool.description,
                 inputSchema: patchedSchema,
             };
@@ -570,12 +612,11 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
                 void this._handleMessage(data);
             };
 
-            // Activate or connect the transport depending on its type.
-            // MultiplexTransport uses activate(); all others (DirectTransport,
-            // LoopbackTransport, custom) use connect().
-            if (transport instanceof MultiplexTransport) {
-                transport.activate();
-            } else if ("connect" in transport && typeof (transport as { connect: unknown }).connect === "function") {
+            // Open the transport. `connect()` is not part of IMessageTransport —
+            // some transports are handed over already open — so probe for it
+            // rather than testing for a specific class, which would tie the
+            // server to one transport implementation.
+            if ("connect" in transport && typeof (transport as { connect: unknown }).connect === "function") {
                 (transport as { connect(): void }).connect();
             }
         });
@@ -590,6 +631,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         this._isRunning = false;
         this._transport = null;
         this._sessionReady = false; // handshake must be repeated on reconnection
+        this._protocolVersion = undefined; // revision must be renegotiated on reconnection
         this._sessionGrammar = undefined; // grammar must be re-resolved on reconnection
         this._currentGrammarKey = undefined;
         this._clearIdleTimer();
@@ -648,6 +690,13 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
             return;
         }
 
+        // MCP dropped JSON-RPC batching in revision 2025-06-18. Answer explicitly
+        // instead of letting an array fall through and be silently discarded.
+        if (Array.isArray(msg)) {
+            this._send(Mcp.invalidRequest(null, "JSON-RPC batching is not supported"));
+            return;
+        }
+
         // Notifications carry no `id` — handle silently, never respond.
         if (!("id" in msg) || msg.id === null) {
             this._handleNotification(msg as JsonRpcNotification);
@@ -690,6 +739,10 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
                 return this._handlers.toolsList(req);
             case "tools/call":
                 return this._handlers.toolsCallAsync(req);
+            case "ping":
+                // Custom handlers may leave `ping` out; answering it is mandatory,
+                // so fall back to the empty result the spec defines.
+                return this._handlers.ping?.(req) ?? Mcp.pingResult(req.id);
             default:
                 return Mcp.methodNotFound(req.id, req.method);
         }
@@ -775,12 +828,25 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     }
 
     /**
-     * Derives server capabilities from registered behavior types.
-     * Any registered behavior implies both `resources` and `tools` support.
+     * Derives server capabilities from what the registered behaviors actually
+     * expose. A capability is only advertised when at least one behavior
+     * contributes to it: a tools-only server must not claim `resources`, or a
+     * client would list an empty set it was told to expect.
      */
     private _deriveCapabilities(): McpServerCapabilities {
-        if (this._behaviors.size === 0) return {};
-        return { resources: { listChanged: true }, tools: { listChanged: true } };
+        let hasResources = false;
+        let hasTools = false;
+
+        for (const behavior of this._behaviors.values()) {
+            if (!hasResources && (behavior.getResources().length > 0 || behavior.getResourceTemplates().length > 0)) hasResources = true;
+            if (!hasTools && behavior.getTools().length > 0) hasTools = true;
+            if (hasResources && hasTools) break;
+        }
+
+        const capabilities: McpServerCapabilities = {};
+        if (hasResources) capabilities.resources = { listChanged: true };
+        if (hasTools) capabilities.tools = { listChanged: true };
+        return capabilities;
     }
 
     /**
@@ -808,13 +874,21 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         return undefined;
     }
 
-    /** Invokes a tool on a specific instance and wraps the result as a JSON-RPC response. */
+    /**
+     * Invokes a tool on a specific instance and wraps the result as a JSON-RPC response.
+     *
+     * A throwing tool is reported as a tool execution error (`isError: true`)
+     * rather than a JSON-RPC error. The spec asks for this because execution
+     * and input-validation failures carry actionable feedback the model can use
+     * to self-correct, whereas a protocol error is opaque to it.
+     */
     private async _callTool(req: JsonRpcRequest, instance: IMcpRuntimeOperations, uri: string, name: string, args: Record<string, unknown>): Promise<JsonRpcResponse> {
         try {
             const result = await instance.executeToolAsync(uri, name, args);
             return Mcp.toolCallResult(req.id, result);
         } catch (err) {
-            return Mcp.internalError(req.id, err instanceof Error ? err.message : "Internal error");
+            const message = err instanceof Error ? err.message : "Tool execution failed";
+            return Mcp.toolCallResult(req.id, McpToolResults.error(`${name}: ${message}`));
         }
     }
 

@@ -37,13 +37,25 @@ export interface IMcpClient {
     readonly serverInfo: McpServerInfo | undefined;
 
     /**
+     * The MCP protocol revision negotiated with the server, or `undefined`
+     * before the handshake completes and after {@link disconnect}.
+     */
+    readonly protocolVersion: string | undefined;
+
+    /**
      * Opens the transport, performs the MCP `initialize` handshake, and sends
      * `notifications/initialized`. Resolves with the server's init result.
+     *
+     * Rejects when the server answers with a protocol revision this client
+     * cannot speak, closing the transport as the spec recommends.
      */
     connect(): Promise<McpInitializeResult>;
 
     /** Closes the transport and rejects any pending requests. */
     disconnect(): void;
+
+    /** Sends a `ping` and resolves when the server answers. */
+    ping(): Promise<void>;
 
     // ── Resources ────────────────────────────────────────────────────────
 

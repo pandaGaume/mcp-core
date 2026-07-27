@@ -27,4 +27,16 @@ export interface IMessageTransport {
 
     /** Closes the transport. */
     close(): void;
+
+    /**
+     * Informs the transport of the MCP protocol revision negotiated during the
+     * `initialize` handshake. An MCP client calls it as soon as the handshake
+     * completes.
+     *
+     * Optional, because most transports carry no version metadata. HTTP-based
+     * ones do: the spec requires an `MCP-Protocol-Version` header on every
+     * request once initialization is done, and a server that never sees it
+     * assumes revision `2025-03-26`.
+     */
+    setProtocolVersion?(version: string): void;
 }

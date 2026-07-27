@@ -1,6 +1,6 @@
 import { IEventSource } from "./eventSource";
 import type { McpGrammar } from "../mcp.grammar";
-import { McpResource, McpResourceContent, McpResourceTemplate, McpTool } from "./mcp.core.interfaces";
+import { McpAnnotations, McpBaseMetadata, McpIcon, McpMeta, McpResource, McpResourceContent, McpResourceTemplate, McpTool } from "./mcp.core.interfaces";
 
 // ── Tool Support ─────────────────────────────────────────────────────────────
 
@@ -33,15 +33,68 @@ export interface McpToolResult {
      * payload as a real object instead of having to re-parse a JSON `text`
      * block. The same data should also appear serialized in {@link content}
      * for backward compatibility with clients that predate structured content.
+     *
+     * Declare {@link McpTool.outputSchema} alongside it so clients know the
+     * shape and can validate what they receive.
      */
     structuredContent?: { [key: string]: unknown };
     isError?: boolean;
+
+    /** Application-defined metadata. */
+    _meta?: McpMeta;
 }
 
-export type McpToolResultContent =
-    | { type: "text"; text: string }
-    | { type: "image"; data: string; mimeType: string } // base64
-    | { type: "resource"; resource: McpResourceContent }; // embedded resource
+/** Fields every content block accepts, whatever its type. */
+export interface McpContentBlockBase {
+    /** Display hints: intended audience, priority, last modification. */
+    annotations?: McpAnnotations;
+
+    /** Application-defined metadata. */
+    _meta?: McpMeta;
+}
+
+/** Plain text. */
+export interface McpTextContent extends McpContentBlockBase {
+    type: "text";
+    text: string;
+}
+
+/** Base64-encoded image. */
+export interface McpImageContent extends McpContentBlockBase {
+    type: "image";
+    data: string;
+    mimeType: string;
+}
+
+/** Base64-encoded audio. */
+export interface McpAudioContent extends McpContentBlockBase {
+    type: "audio";
+    data: string;
+    mimeType: string;
+}
+
+/**
+ * A pointer to a resource rather than its content.
+ *
+ * Lets a tool hand back something large or live without inlining it. The client
+ * reads or subscribes to the URI when it actually needs the data. Such a link
+ * is not guaranteed to appear in `resources/list`.
+ */
+export interface McpResourceLinkContent extends McpContentBlockBase, McpBaseMetadata {
+    type: "resource_link";
+    uri: string;
+    description?: string;
+    mimeType?: string;
+    icons?: McpIcon[];
+}
+
+/** A resource inlined in the result, sparing the client a `resources/read`. */
+export interface McpEmbeddedResourceContent extends McpContentBlockBase {
+    type: "resource";
+    resource: McpResourceContent;
+}
+
+export type McpToolResultContent = McpTextContent | McpImageContent | McpAudioContent | McpResourceLinkContent | McpEmbeddedResourceContent;
 
 /**
  * Shared runtime contract for both behaviors and adapters.

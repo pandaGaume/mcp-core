@@ -11,6 +11,7 @@ import { McpResourceContent, McpToolResult } from "./interfaces";
  * return McpToolResults.text(`Dimmed sun-light to 30%`)
  * return McpToolResults.json({ uri, intensity: 0.3 })
  * return McpToolResults.resource(await this.readResource(uri))
+ * return McpToolResults.link("mesh://scene/hero", "hero")
  * return McpToolResults.error(`Light not found: ${uri}`)
  * ```
  */
@@ -38,9 +39,28 @@ export const McpToolResults = {
     /** Embeds an updated resource inline — avoids a round-trip `resources/read`. */
     resource: (resource: McpResourceContent): McpToolResult => ({ content: [{ type: "resource", resource }] }),
 
+    /**
+     * Points at a resource instead of inlining it.
+     *
+     * Prefer this over {@link resource} when the payload is large or changes on
+     * its own: the client reads or subscribes to the URI when it needs the data.
+     */
+    link: (uri: string, name: string, options?: { description?: string; mimeType?: string; title?: string }): McpToolResult => ({
+        content: [{ type: "resource_link", uri, name, ...options }],
+    }),
+
     /** Base64 image. */
     image: (data: string, mimeType: string): McpToolResult => ({ content: [{ type: "image", data, mimeType }] }),
 
-    /** Tool-level error — `isError: true` signals failure to the client without throwing. */
+    /** Base64 audio. */
+    audio: (data: string, mimeType: string): McpToolResult => ({ content: [{ type: "audio", data, mimeType }] }),
+
+    /**
+     * Tool-level error — `isError: true` signals failure to the client without throwing.
+     *
+     * This is the form the spec wants for execution and input-validation
+     * failures: unlike a JSON-RPC error, it reaches the model, which can read
+     * the message and retry with corrected arguments.
+     */
     error: (message: string): McpToolResult => ({ content: [{ type: "text", text: message }], isError: true }),
 } as const;
