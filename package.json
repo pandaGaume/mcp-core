@@ -64,8 +64,7 @@
     "scripts": {
         "build": "tsup",
         "clean": "rimraf dist",
-        "compile": "tsc -b tsconfig.build.json",
-        "watch": "tsc -b tsconfig.build.json -w",
+        "watch": "tsup --watch",
         "typecheck": "tsc -p tsconfig.json --noEmit",
         "test": "vitest run",
         "test:watch": "vitest",

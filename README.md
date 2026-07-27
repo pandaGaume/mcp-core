@@ -438,11 +438,15 @@ import { McpClient } from "@cyanmycelium/mcp-core/client";
 import { StreamableHttpTransport } from "@cyanmycelium/mcp-core/node";
 
 const transport = new StreamableHttpTransport("https://example.com/mcp", {
-    headers: { Authorization: `Bearer ${token}` },
+    // A function, not an object: read fresh per request, so rotating the token
+    // takes effect without rebuilding the transport and losing the session.
+    headers: () => ({ Authorization: `Bearer ${tokens.current}` }),
 });
 const client = new McpClient({ name: "my-agent", version: "1.0.0" }, transport);
 await client.connect();
 ```
+
+A plain object works too and is snapshotted at construction. OAuth itself is not implemented: the transport carries whatever credential you give it, and does not yet discover an authorization server or run a token flow.
 
 The client hands the negotiated revision to the transport, which stamps `MCP-Protocol-Version` on every subsequent request. Session ids are captured and echoed automatically, the standalone GET stream is opened after initialization (with or without a session) and re-established with `Last-Event-ID` when the server closes it, honouring the SSE `retry` delay. A session terminated server-side (HTTP 404) surfaces as a transport close, since recovering means a fresh `initialize`; call `client.connect()` again to start a new session. `close()` sends an HTTP DELETE to release the session.
 

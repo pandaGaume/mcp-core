@@ -123,6 +123,38 @@ describe("StreamableHttpTransport", () => {
         expect(server.requests[0].headers["mcp-protocol-version"]).toBe("2025-11-25");
     });
 
+    it("re-reads a header function on every request, so a rotated token takes effect", async () => {
+        server = await startServer((_req, res) => jsonResponse(res, initResult));
+
+        let token = "first";
+        transport = new StreamableHttpTransport(server.url, { enableGetStream: false, headers: () => ({ Authorization: `Bearer ${token}` }) });
+
+        await open(transport);
+        transport.send(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }));
+        await waitFor(() => server!.requests.length === 1);
+
+        token = "rotated";
+        transport.send(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }));
+        await waitFor(() => server!.requests.length === 2);
+
+        expect(server.requests[0].headers["authorization"]).toBe("Bearer first");
+        expect(server.requests[1].headers["authorization"]).toBe("Bearer rotated");
+    });
+
+    it("snapshots a plain header object, so later mutation of the caller's copy is ignored", async () => {
+        server = await startServer((_req, res) => jsonResponse(res, initResult));
+
+        const headers = { Authorization: "Bearer static" };
+        transport = new StreamableHttpTransport(server.url, { enableGetStream: false, headers });
+
+        await open(transport);
+        headers.Authorization = "Bearer mutated";
+        transport.send(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }));
+        await waitFor(() => server!.requests.length === 1);
+
+        expect(server.requests[0].headers["authorization"]).toBe("Bearer static");
+    });
+
     // ── Session ──────────────────────────────────────────────────────────
 
     it("captures the session id and echoes it on later requests", async () => {

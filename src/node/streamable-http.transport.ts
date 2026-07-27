@@ -8,8 +8,20 @@ import type { IMessageTransport } from "../interfaces";
  * Options for the Node.js Streamable HTTP client transport.
  */
 export interface IStreamableHttpTransportOptions {
-    /** Extra headers sent with every HTTP request. */
-    headers?: Readonly<Record<string, string>>;
+    /**
+     * Extra headers sent with every HTTP request.
+     *
+     * Pass a function when a value changes over the life of the connection —
+     * a bearer token being the obvious case. It is read fresh for each request,
+     * so a rotated credential takes effect immediately, where a plain object
+     * would force the caller to rebuild the transport and lose the MCP session
+     * along with it.
+     *
+     * Kept synchronous on purpose: this is for reading a credential the caller
+     * already holds, not for acquiring one. Fetching a token is an asynchronous
+     * flow that belongs above the transport.
+     */
+    headers?: Readonly<Record<string, string>> | (() => Readonly<Record<string, string>>);
 
     /**
      * MCP protocol revision advertised in the `MCP-Protocol-Version` header.
@@ -160,7 +172,10 @@ export class StreamableHttpTransport implements IMessageTransport {
     public onError: ((error: Error) => void) | null = null;
 
     private readonly _url: URL;
-    private readonly _headers: Readonly<Record<string, string>>;
+
+    /** Resolved on every request, so a rotated credential is picked up at once. */
+    private readonly _headers: () => Readonly<Record<string, string>>;
+
     private readonly _enableGetStream: boolean;
     private readonly _terminateSessionOnClose: boolean;
     private readonly _baseReconnectDelayMs: number;
@@ -190,7 +205,15 @@ export class StreamableHttpTransport implements IMessageTransport {
         if (this._url.protocol !== "http:" && this._url.protocol !== "https:") {
             throw new Error(`StreamableHttpTransport: unsupported URL protocol "${this._url.protocol}"`);
         }
-        this._headers = { ...options.headers };
+        // A plain object is snapshotted once; a function is called per request.
+        const headers = options.headers;
+        this._headers =
+            typeof headers === "function"
+                ? headers
+                : (
+                      (snapshot) => () =>
+                          snapshot
+                  )({ ...headers });
         this._protocolVersion = options.protocolVersion;
         this._enableGetStream = options.enableGetStream ?? true;
         this._terminateSessionOnClose = options.terminateSessionOnClose ?? true;
@@ -252,7 +275,7 @@ export class StreamableHttpTransport implements IMessageTransport {
     // -------------------------------------------------------------------------
 
     private _requestHeaders(required: Record<string, string>): Record<string, string> {
-        const headers: Record<string, string> = { ...this._headers, ...required };
+        const headers: Record<string, string> = { ...this._headers(), ...required };
         if (this._protocolVersion) headers["MCP-Protocol-Version"] = this._protocolVersion;
         if (this._sessionId) headers["Mcp-Session-Id"] = this._sessionId;
         return headers;
