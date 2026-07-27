@@ -16,26 +16,29 @@ import { McpGrammar } from "../mcp.grammar";
 import type { McpGrammarStore, McpGrammarStoreChangeEvent } from "../mcp.grammarStore";
 import { negotiateProtocolVersion } from "../mcp.protocol";
 import { McpToolResults } from "../mcp.toolResult";
-import { DirectTransport } from "./direct.transport";
 import { Mcp } from "./jsonrpc.helpers";
 
 /**
  * Default implementation of {@link IMcpServer}.
  *
- * Connects to a WebSocket tunnel and routes incoming JSON-RPC messages to the
- * appropriate MCP handler. Also implements {@link IMcpServerHandlers} so it can
- * act as its own default handler — or delegate to a custom one supplied via the
- * builder's `withHandlers()`.
+ * Routes incoming JSON-RPC messages from its transport to the appropriate MCP
+ * handler. Also implements {@link IMcpServerHandlers} so it can act as its own
+ * default handler — or delegate to a custom one supplied via the builder's
+ * `withHandlers()`.
+ *
+ * The transport is always supplied by the caller: the server owns the protocol,
+ * never the connection. Reconnection, back-off and framing therefore belong to
+ * the transport, which is the only party that knows what reconnecting means for
+ * the medium it speaks.
  *
  * Lifecycle:
  * ```
  * start() → transport opens → receives messages → dispatches to handlers
- * stop()  → transport closes, reconnection cancelled
+ * stop()  → transport closes
  * ```
  */
 export class McpServer implements IMcpServer, IMcpServerHandlers {
     private readonly _name: string;
-    private readonly _wsUrl: string;
     private readonly _options: IMcpServerOptions;
     private readonly _initializer: IMcpInitializer | undefined;
 
@@ -46,17 +49,16 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     private readonly _handlers: IMcpServerHandlers;
 
     /**
-     * An externally-provided transport (e.g. {@link MultiplexTransport}).
-     * When set, `_connect()` reuses it instead of creating a {@link DirectTransport}.
-     * Reconnection is delegated to the external transport itself.
+     * The transport this server speaks through, supplied at construction.
+     *
+     * Optional so the class can be used as a pure request handler — calling
+     * `initialize()`, `toolsList()` and friends directly — without a connection.
+     * {@link start} is what requires one.
      */
-    private readonly _externalTransport: IMessageTransport | undefined;
+    private readonly _providedTransport: IMessageTransport | undefined;
 
     private _transport: IMessageTransport | null = null;
     private _isRunning = false;
-
-    /** Set to true by {@link stop} to prevent reconnection after an explicit close. */
-    private _stopped = false;
 
     /**
      * Set to true when the client sends `notifications/initialized`, signalling that
@@ -69,9 +71,6 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      * Reset on disconnect so a reconnecting client renegotiates from scratch.
      */
     private _protocolVersion: string | undefined;
-
-    /** Counts consecutive failed reconnection attempts; reset on successful open. */
-    private _reconnectAttempts = 0;
 
     /** Handle for the pending idle-timeout timer, if active. */
     private _idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -115,7 +114,6 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
 
     constructor(
         name: string,
-        wsUrl: string,
         options: IMcpServerOptions,
         initializer?: IMcpInitializer,
         handlers?: IMcpServerHandlers,
@@ -125,14 +123,13 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         grammarStore?: McpGrammarStore
     ) {
         this._name = name;
-        this._wsUrl = wsUrl;
         this._options = options;
         this._initializer = initializer;
         // If no custom handlers provided, the server routes messages itself.
         this._handlers = handlers ?? this;
         this._grammars = grammars ?? new Map();
         this._grammarResolver = grammarResolver;
-        this._externalTransport = transport;
+        this._providedTransport = transport;
         this._grammarStore = grammarStore;
 
         // Subscribe to grammar store changes so the session grammar can be
@@ -173,23 +170,24 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     // -------------------------------------------------------------------------
 
     /**
-     * Opens the WebSocket connection to the tunnel URL.
-     * Resolves when the connection is established, rejects on the first error.
-     * Safe to call again after {@link stop} to reconnect manually.
+     * Opens the transport and starts serving.
+     * Resolves once the transport reports itself open, rejects on the first error.
+     * Safe to call again after {@link stop}.
+     *
+     * @throws {Error} when the server was built without a transport.
      */
     start(): Promise<void> {
-        this._stopped = false;
-        this._reconnectAttempts = 0;
-        return this._connect();
+        if (!this._providedTransport) {
+            return Promise.reject(new Error("McpServer: no transport was provided — pass one to the constructor or use McpServerBuilder.withTransport()"));
+        }
+        return this._connect(this._providedTransport);
     }
 
     /**
-     * Closes the WebSocket connection and cancels any pending reconnection.
-     * After calling this, no further reconnection attempts will be made until
-     * {@link start} is called again.
+     * Closes the transport and stops serving.
+     * Safe to call more than once.
      */
     async stop(): Promise<void> {
-        this._stopped = true;
         this._clearIdleTimer();
         this._storeUnsubscribe?.();
         this._storeUnsubscribe = undefined;
@@ -579,29 +577,19 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     // Transport connection management
     // -------------------------------------------------------------------------
 
-    /**
-     * Opens the transport and wires up all event handlers.
-     * Called by {@link start} and scheduled again by {@link _scheduleReconnect}.
-     *
-     * When an external transport was provided (e.g. {@link MultiplexTransport}),
-     * it is reused as-is. Otherwise a fresh {@link DirectTransport} is created
-     * for each connection attempt.
-     */
-    private _connect(): Promise<void> {
+    /** Wires the transport's event handlers and opens it. */
+    private _connect(transport: IMessageTransport): Promise<void> {
         return new Promise((resolve, reject) => {
-            const transport = this._externalTransport ?? new DirectTransport(this._wsUrl);
-
             transport.onOpen = () => {
                 this._transport = transport;
                 this._isRunning = true;
-                this._reconnectAttempts = 0; // reset back-off counter on success
                 resolve();
             };
 
-            transport.onError = () => {
+            transport.onError = (error: Error) => {
                 // Only reject the initial promise; subsequent errors are handled via onClose.
                 if (!this._isRunning) {
-                    reject(new Error(`McpServer: could not connect to ${this._wsUrl}`));
+                    reject(new Error(`McpServer: transport failed to open — ${error.message}`));
                 }
             };
 
@@ -623,9 +611,11 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     }
 
     /**
-     * Called whenever the transport closes (cleanly or not).
-     * Triggers reconnection unless {@link stop} was called explicitly.
-     * When an external transport is in use, reconnection is delegated to it.
+     * Called whenever the transport closes, cleanly or not.
+     *
+     * The session is dropped, not rebuilt: reconnecting belongs to the
+     * transport, which is the only party that knows what that means for its
+     * medium. When it reopens, the client renegotiates from `initialize`.
      */
     private _onDisconnect(): void {
         this._isRunning = false;
@@ -635,39 +625,6 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         this._sessionGrammar = undefined; // grammar must be re-resolved on reconnection
         this._currentGrammarKey = undefined;
         this._clearIdleTimer();
-
-        if (!this._stopped) {
-            this._scheduleReconnect();
-        }
-    }
-
-    /**
-     * Schedules a reconnection attempt using exponential back-off with jitter.
-     *
-     * Delay formula: `min(baseDelayMs * 2^attempt, maxDelayMs) * jitter`
-     * where `jitter ∈ [0.5, 1.0]` to spread reconnection storms.
-     *
-     * Gives up silently once `maxAttempts` is reached (if configured).
-     */
-    private _scheduleReconnect(): void {
-        // External transports (e.g. MultiplexTransport) manage their own reconnection.
-        if (this._externalTransport) return;
-
-        const policy = this._options.reconnect;
-        // No reconnect policy means no automatic reconnection.
-        if (!policy) return;
-
-        const maxAttempts = policy.maxAttempts ?? Infinity;
-        if (this._reconnectAttempts >= maxAttempts) return;
-
-        const base = policy.baseDelayMs ?? 1_000;
-        const max = policy.maxDelayMs ?? 30_000;
-        const jitter = 0.5 + Math.random() * 0.5; // [0.5, 1.0]
-        const delay = Math.min(base * 2 ** this._reconnectAttempts, max) * jitter;
-
-        this._reconnectAttempts++;
-
-        setTimeout(() => void this._connect(), delay);
     }
 
     // -------------------------------------------------------------------------

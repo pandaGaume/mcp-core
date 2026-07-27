@@ -147,26 +147,26 @@ describe("negotiateProtocolVersion", () => {
 
 describe("McpServer.initialize", () => {
     it("echoes the revision the client requested", () => {
-        const server = new McpServer("s", "", {});
+        const server = new McpServer("s", {});
         const res = server.initialize(initRequest("2025-06-18"));
         expect((res.result as { protocolVersion: string }).protocolVersion).toBe("2025-06-18");
         expect(server.protocolVersion).toBe("2025-06-18");
     });
 
     it("answers with its latest revision when the requested one is unknown", () => {
-        const server = new McpServer("s", "", {});
+        const server = new McpServer("s", {});
         const res = server.initialize(initRequest("1999-01-01"));
         expect((res.result as { protocolVersion: string }).protocolVersion).toBe(MCP_LATEST_PROTOCOL_VERSION);
     });
 
     it("respects a narrowed set from server options", () => {
-        const server = new McpServer("s", "", { protocolVersions: ["2024-11-05"] });
+        const server = new McpServer("s", { protocolVersions: ["2024-11-05"] });
         const res = server.initialize(initRequest(MCP_LATEST_PROTOCOL_VERSION));
         expect((res.result as { protocolVersion: string }).protocolVersion).toBe("2024-11-05");
     });
 
     it("lets an initializer pin a revision", () => {
-        const server = new McpServer("s", "", {}, { initialize: () => ({ protocolVersion: "2024-11-05", serverInfo: { name: "s", version: "1.0.0" } }) });
+        const server = new McpServer("s", {}, { initialize: () => ({ protocolVersion: "2024-11-05", serverInfo: { name: "s", version: "1.0.0" } }) });
         const res = server.initialize(initRequest(MCP_LATEST_PROTOCOL_VERSION));
         expect((res.result as { protocolVersion: string }).protocolVersion).toBe("2024-11-05");
     });
@@ -178,7 +178,7 @@ describe("McpServer.initialize", () => {
 
 describe("McpServer capabilities", () => {
     function capsOf(...behaviors: IMcpBehavior[]) {
-        const server = new McpServer("s", "", {});
+        const server = new McpServer("s", {});
         server.register(...behaviors);
         return (server.initialize(initRequest()).result as { capabilities: Record<string, unknown> }).capabilities;
     }
@@ -213,7 +213,7 @@ describe("McpServer.toolsCallAsync", () => {
     }
 
     it("reports an unknown tool as -32602", async () => {
-        const server = new McpServer("s", "", {});
+        const server = new McpServer("s", {});
         server.register(new StubBehavior("t", [], [echoTool]));
         const res = await server.toolsCallAsync(callRequest("nope"));
         expect(res.error?.code).toBe(-32602);
@@ -221,7 +221,7 @@ describe("McpServer.toolsCallAsync", () => {
     });
 
     it("reports a throwing tool as a tool execution error, not a protocol error", async () => {
-        const server = new McpServer("s", "", {});
+        const server = new McpServer("s", {});
         server.register(
             new StubBehavior("t", [], [echoTool], () => {
                 throw new Error("boom");

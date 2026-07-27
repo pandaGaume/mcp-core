@@ -1,10 +1,14 @@
 /**
- * Abstraction over the raw communication channel between an {@link IMcpServer}
- * and its relay (typically a {@link WsTunnel}).
+ * Abstraction over the raw communication channel an MCP server or client
+ * speaks through. The protocol layer never opens a connection itself: it is
+ * handed one, so framing, reconnection and authentication stay with whoever
+ * understands the medium.
  *
- * Two built-in implementations are provided:
- * - {@link DirectTransport} — 1 server : 1 WebSocket (default).
- * - {@link MultiplexTransport} — N servers : 1 WebSocket via an envelope protocol.
+ * Built into this package: `StdioTransport` and `StreamableHttpTransport`
+ * (`@cyanmycelium/mcp-core/node`), the two transports the MCP specification
+ * defines, plus `LoopbackTransport` for in-process pairs. WebSocket tunnelling
+ * to a broker lives in `@cyanmycelium/mcp-broker-provider`, since it is a
+ * topology rather than a part of the specification.
  */
 export interface IMessageTransport {
     /** Sends a serialized JSON-RPC message through the transport. */

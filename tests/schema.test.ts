@@ -44,7 +44,7 @@ function request(method: string, params?: unknown): JsonRpcRequest {
 
 describe("resource contents", () => {
     it("serves binary content as blob", async () => {
-        const server = new McpServer("s", "", {});
+        const server = new McpServer("s", {});
         server.register(
             new SchemaBehavior([{ uri: "app://logo", name: "logo", mimeType: "image/png" }], [], [], {
                 uri: "app://logo",
@@ -61,7 +61,7 @@ describe("resource contents", () => {
     });
 
     it("still serves text content unchanged", async () => {
-        const server = new McpServer("s", "", {});
+        const server = new McpServer("s", {});
         server.register(new SchemaBehavior([{ uri: "app://notes", name: "notes" }], [], [], { uri: "app://notes", mimeType: "text/plain", text: "hello" }));
 
         const res = await server.resourcesRead(request("resources/read", { uri: "app://notes" }));
@@ -97,7 +97,7 @@ describe("descriptive metadata", () => {
             _meta: { "example.com/owner": "weather-team" },
         };
 
-        const server = new McpServer("s", "", {});
+        const server = new McpServer("s", {});
         server.register(new SchemaBehavior([], [], [tool]));
 
         const listed = (server.toolsList(request("tools/list")).result as { tools: McpTool[] }).tools;
@@ -105,7 +105,7 @@ describe("descriptive metadata", () => {
     });
 
     it("accepts a tool with no description, as the spec allows", () => {
-        const server = new McpServer("s", "", {});
+        const server = new McpServer("s", {});
         server.register(new SchemaBehavior([], [], [{ name: "ping", inputSchema: { type: "object", additionalProperties: false } }]));
 
         const listed = (server.toolsList(request("tools/list")).result as { tools: McpTool[] }).tools;
@@ -123,7 +123,7 @@ describe("descriptive metadata", () => {
             icons: [{ src: "https://example.com/doc.png" }],
         };
 
-        const server = new McpServer("s", "", {});
+        const server = new McpServer("s", {});
         server.register(new SchemaBehavior([resource]));
 
         const listed = (server.resourcesList(request("resources/list")).result as { resources: McpResource[] }).resources;
@@ -131,7 +131,7 @@ describe("descriptive metadata", () => {
     });
 
     it("accepts a resource with no mimeType, as the spec allows", () => {
-        const server = new McpServer("s", "", {});
+        const server = new McpServer("s", {});
         server.register(new SchemaBehavior([{ uri: "app://thing", name: "thing" }]));
 
         const listed = (server.resourcesList(request("resources/list")).result as { resources: McpResource[] }).resources;
@@ -146,7 +146,7 @@ describe("descriptive metadata", () => {
             icons: [{ src: "https://example.com/folder.png" }],
         };
 
-        const server = new McpServer("s", "", {});
+        const server = new McpServer("s", {});
         server.register(new SchemaBehavior([], [template]));
 
         const listed = (server.resourcesTemplatesList(request("resources/templates/list")).result as { resourceTemplates: McpResourceTemplate[] }).resourceTemplates;
@@ -195,7 +195,7 @@ describe("tool result content blocks", () => {
 
 describe("grammar title overrides", () => {
     function serverWithGrammar(grammar: McpGrammar): McpServer {
-        const server = new McpServer("s", "", {}, undefined, undefined, new Map([["fr", grammar]]), () => "fr");
+        const server = new McpServer("s", {}, undefined, undefined, new Map([["fr", grammar]]), () => "fr");
         server.register(
             new SchemaBehavior(
                 [{ uri: "app://counter", name: "counter", title: "Counter" }],
@@ -265,7 +265,7 @@ describe("grammar title overrides", () => {
 
 describe("capability shapes", () => {
     it("accepts the full client capability set a modern peer announces", () => {
-        const server = new McpServer("s", "", {});
+        const server = new McpServer("s", {});
         const res = server.initialize(
             request("initialize", {
                 protocolVersion: "2025-11-25",

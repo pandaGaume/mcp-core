@@ -90,33 +90,11 @@ export interface IMcpServerOptions {
     protocolVersions?: readonly string[];
 
     /**
-     * Close the WebSocket connection after this many milliseconds of inactivity
+     * Close the transport after this many milliseconds of inactivity
      * (i.e. no message received). The timer resets on every incoming message.
      * Omit to disable idle detection.
      */
     idleTimeoutMs?: number;
-
-    /** Automatic reconnection policy applied when the connection drops unexpectedly. */
-    reconnect?: {
-        /**
-         * Initial delay in milliseconds before the first reconnection attempt.
-         * Subsequent attempts use exponential back-off: `min(baseDelayMs * 2^n, maxDelayMs)`.
-         * @default 1000
-         */
-        baseDelayMs?: number;
-
-        /**
-         * Upper bound on the reconnection delay in milliseconds.
-         * @default 30000
-         */
-        maxDelayMs?: number;
-
-        /**
-         * Maximum number of reconnection attempts before giving up.
-         * Omit for unlimited attempts.
-         */
-        maxAttempts?: number;
-    };
 }
 
 /**
@@ -129,7 +107,7 @@ export interface IMcpServerOptions {
  * ```typescript
  * const server = builder
  *     .withName("my-app")
- *     .withWsUrl("ws://localhost:8080")
+ *     .withTransport(new StdioTransport())
  *     .withInitializer(new SceneInitializer())
  *     .withBehavior(new MeshBehavior())
  *     .withBehavior(new LightBehavior())
@@ -142,7 +120,6 @@ export interface IMcpServerOptions {
  * ```
  */
 export interface IMcpServerBuilder {
-    withWsUrl(url: string): IMcpServerBuilder;
     withName(name: string): IMcpServerBuilder;
     withInitializer(initializer: IMcpInitializer): IMcpServerBuilder;
     register(...behavior: IMcpBehavior[]): IMcpServerBuilder;
@@ -199,8 +176,8 @@ export interface IMcpServerBuilder {
     withGrammarStore(store: McpGrammarStore): IMcpServerBuilder;
 
     /**
-     * Provides an external transport (e.g. {@link MultiplexTransport}) instead
-     * of the default {@link DirectTransport}. When set, `withWsUrl()` is optional.
+     * Sets the transport the server speaks through. Required before {@link build}.
+     * The server owns the protocol; opening and reconnecting are the transport's business.
      */
     withTransport(transport: IMessageTransport): IMcpServerBuilder;
 

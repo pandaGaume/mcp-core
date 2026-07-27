@@ -12,13 +12,13 @@ import { McpServer } from "./mcp.server";
  * ```typescript
  * const server = new McpServerBuilder()
  *     .withName("my-app")
- *     .withWsUrl("ws://localhost:8080")
+ *     .withTransport(new StdioTransport())
  *     .withInitializer(new SceneInitializer())
  *     .withGrammar("concise", McpGrammar.fromJSON(conciseData))
  *     .withGrammar("verbose", McpGrammar.fromJSON(verboseData))
  *     .withGrammarResolver(client => client.name.includes("claude") ? "concise" : "verbose")
  *     .register(new MeshBehavior(), new LightBehavior())
- *     .withOptions({ idleTimeoutMs: 30_000, reconnect: { baseDelayMs: 1_000, maxDelayMs: 30_000 } })
+ *     .withOptions({ idleTimeoutMs: 30_000 })
  *     .build();
  *
  * await server.start();
@@ -26,7 +26,6 @@ import { McpServer } from "./mcp.server";
  */
 export class McpServerBuilder implements IMcpServerBuilder {
     private _name = "mcp-server";
-    private _wsUrl = "";
     private _initializer: IMcpInitializer | undefined;
     private _handlers: IMcpServerHandlers | undefined;
     private _behaviors: IMcpBehavior[] = [];
@@ -39,12 +38,6 @@ export class McpServerBuilder implements IMcpServerBuilder {
     /** Sets the human-readable name reported in `initialize` responses. */
     withName(name: string): this {
         this._name = name;
-        return this;
-    }
-
-    /** Sets the WebSocket tunnel URL the server will connect to on {@link IMcpServer.start}. */
-    withWsUrl(url: string): this {
-        this._wsUrl = url;
         return this;
     }
 
@@ -146,16 +139,18 @@ export class McpServerBuilder implements IMcpServerBuilder {
     }
 
     /**
-     * Provides an external transport instead of the default {@link DirectTransport}.
-     * When set, `withWsUrl()` is no longer required — the transport manages its
-     * own connection lifecycle.
+     * Sets the transport the server speaks through. Required.
+     *
+     * The server owns the protocol, never the connection: opening, framing and
+     * reconnecting are the transport's business.
      *
      * @example
      * ```typescript
-     * const transport = MultiplexTransport.create("scene", "ws://localhost:8080/providers");
+     * import { StdioTransport } from "@cyanmycelium/mcp-core/node";
+     *
      * const server = new McpServerBuilder()
      *     .withName("scene")
-     *     .withTransport(transport)
+     *     .withTransport(new StdioTransport())
      *     .build();
      * ```
      */
@@ -166,22 +161,12 @@ export class McpServerBuilder implements IMcpServerBuilder {
 
     /**
      * Constructs and returns a configured {@link IMcpServer}.
-     * @throws {Error} if neither `withWsUrl()` nor `withTransport()` was called.
+     * @throws {Error} if `withTransport()` was not called.
      */
     build(): IMcpServer {
-        if (!this._wsUrl && !this._transport) throw new Error("McpServerBuilder: withWsUrl() or withTransport() is required before build()");
+        if (!this._transport) throw new Error("McpServerBuilder: withTransport() is required before build()");
 
-        const server = new McpServer(
-            this._name,
-            this._wsUrl,
-            this._options,
-            this._initializer,
-            this._handlers,
-            this._grammars,
-            this._grammarResolver,
-            this._transport,
-            this._grammarStore
-        );
+        const server = new McpServer(this._name, this._options, this._initializer, this._handlers, this._grammars, this._grammarResolver, this._transport, this._grammarStore);
 
         for (const behavior of this._behaviors) {
             server.register(behavior);

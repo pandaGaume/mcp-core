@@ -92,7 +92,7 @@ function makeServer(opts: {
     store?: McpGrammarStore;
     resolver?: ReturnType<typeof makeChainResolver>;
 }): McpServer {
-    const server = new McpServer("test-server", "", {}, undefined, undefined, opts.staticGrammars, opts.resolver, undefined, opts.store);
+    const server = new McpServer("test-server", {}, undefined, undefined, opts.staticGrammars, opts.resolver, undefined, opts.store);
     server.register(opts.behavior);
     return server;
 }

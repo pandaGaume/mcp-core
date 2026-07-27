@@ -73,7 +73,9 @@ npm install @cyanmycelium/mcp-core
 
 ## Runtimes
 
-Runs in both Node.js and the browser. In Node the typical transport is stdio (`StdioTransport`). In the browser the server lives next to the app and connects to an MCP broker over WebSocket (`DirectTransport`, `MultiplexTransport`); the broker relays JSON-RPC frames to and from the actual MCP client.
+Runs in both Node.js and the browser. This package implements the two transports the MCP specification defines: stdio (`StdioTransport`, server side) and Streamable HTTP (`StreamableHttpTransport`, client side), plus `LoopbackTransport` for a server and client sharing a process.
+
+A browser application that wants to expose its MCP server to the outside world reaches an MCP broker over a WebSocket tunnel. That tunnel is CyanMycelium topology rather than protocol, so it lives in [`@cyanmycelium/mcp-broker-provider`](https://www.npmjs.com/package/@cyanmycelium/mcp-broker-provider) and this package stays a faithful implementation of the specification and nothing else.
 
 ## Protocol coverage
 
@@ -91,7 +93,7 @@ Revisions accepted during the handshake: `2025-11-25` (default), `2025-06-18`, `
 | Pagination (`cursor` / `nextCursor`) | client follows it; server returns single pages |
 | Prompts, resource subscriptions, logging, completion | not yet |
 | Progress, cancellation, sampling, roots, elicitation, tasks | not yet |
-| Transports | stdio, Streamable HTTP (client side), WebSocket via broker |
+| Transports | stdio (server side), Streamable HTTP (client side), loopback |
 | Streamable HTTP: sessions, `MCP-Protocol-Version`, SSE resumption, `DELETE` teardown | yes |
 | OAuth authorization (protected resource metadata, `WWW-Authenticate`) | not yet: bring your own headers via `IStreamableHttpTransportOptions.headers` |
 
@@ -419,15 +421,15 @@ The pattern scales to richer domains: a single behavior describing mesh operatio
 
 ## Transports
 
+A server never opens its own connection: it is handed a transport, and `withTransport()` is required before `build()`. Framing, reconnection and authentication belong to whoever understands the medium.
+
 | Transport | Module | Use case |
 |---|---|---|
-| `DirectTransport` | `@cyanmycelium/mcp-core/server` | One server, one WebSocket. The default. |
-| `MultiplexTransport` | `@cyanmycelium/mcp-core/server` | Multiple servers sharing one WebSocket via envelope routing. |
-| `LoopbackTransport` | `@cyanmycelium/mcp-core/server` | Server and client in the same process. Tests, local dev, embedded use. |
-| `StdioTransport` | `@cyanmycelium/mcp-core/node` | Line-delimited JSON-RPC over stdin/stdout. The MCP standard for CLI agents. |
+| `StdioTransport` | `@cyanmycelium/mcp-core/node` | Line-delimited JSON-RPC over stdin/stdout. The MCP standard for a server launched as a subprocess. |
 | `StreamableHttpTransport` | `@cyanmycelium/mcp-core/node` | The MCP standard for remote servers: POST plus an SSE stream, with sessions and resumption. Client side. |
+| `LoopbackTransport` | `@cyanmycelium/mcp-core/server` | Server and client in the same process. Tests, local dev, embedded use. |
 
-Implement `IMessageTransport` for anything else (WebRTC, postMessage, gRPC).
+Implement `IMessageTransport` for anything else (WebRTC, postMessage, gRPC). The WebSocket tunnel to a CyanMycelium broker lives in [`@cyanmycelium/mcp-broker-provider`](https://www.npmjs.com/package/@cyanmycelium/mcp-broker-provider), which is where `DirectTransport` and `MultiplexTransport` moved in `0.5.0`.
 
 `StreamableHttpTransport` connects an `McpClient` to a remote MCP endpoint:
 

@@ -19,9 +19,9 @@ import type { McpToolResult } from "./mcp.behavior.interfaces";
  * const tools = await client.listTools();
  * ```
  *
- * @example Tunnel (cross-page)
+ * @example Remote server over Streamable HTTP
  * ```typescript
- * const transport = new DirectTransport("ws://localhost:3000/robot_1");
+ * const transport = new StreamableHttpTransport("https://example.com/mcp");
  * const client = new McpClient({ name: "robot_2", version: "1.0.0" }, transport);
  * await client.connect();
  * ```
