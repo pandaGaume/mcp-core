@@ -144,6 +144,11 @@ export class McpClient implements IMcpClient {
                         this._serverInfo = initResult.serverInfo;
                         this._connected = true;
 
+                        // Hand the negotiated revision to the transport before any
+                        // further traffic: HTTP transports must stamp it on every
+                        // subsequent request, starting with the notification below.
+                        this._transport.setProtocolVersion?.(initResult.protocolVersion);
+
                         // Send notifications/initialized (no response expected)
                         this._notify("notifications/initialized");
 

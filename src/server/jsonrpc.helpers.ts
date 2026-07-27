@@ -129,12 +129,14 @@ export const Mcp = {
 
     /**
      * Wraps a `tools/call` result. Always carries the `content` blocks; also
-     * forwards `structuredContent` (MCP 2025-06-18) when the tool supplied it.
+     * forwards `structuredContent` (MCP 2025-06-18) and `_meta` when the tool
+     * supplied them.
      */
     toolCallResult: (id: string | number, result: McpToolResult): JsonRpcResponse =>
         jsonRpcOk(id, {
             content: result.content,
             ...(result.structuredContent !== undefined ? { structuredContent: result.structuredContent } : {}),
+            ...(result._meta !== undefined ? { _meta: result._meta } : {}),
             isError: result.isError ?? false,
         }),
 

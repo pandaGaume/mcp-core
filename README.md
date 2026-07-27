@@ -86,15 +86,25 @@ Revisions accepted during the handshake: `2025-11-25` (default), `2025-06-18`, `
 | `initialize`, version negotiation, `notifications/initialized` | yes |
 | `tools/list`, `tools/call`, `notifications/tools/list_changed` | yes |
 | `resources/list`, `resources/templates/list`, `resources/read`, `notifications/resources/list_changed` | yes |
-| `structuredContent` on tool results | yes |
+| `structuredContent` and `outputSchema` on tools | yes |
+| `title`, `icons`, `annotations`, `_meta` on tools, resources and templates | yes |
+| Binary resources (`blob`), `audio` and `resource_link` content blocks | yes |
 | `ping` (both directions) | yes |
 | Pagination (`cursor` / `nextCursor`) | client follows it; server returns single pages |
-| `outputSchema`, `title`, `icons`, `annotations`, binary (`blob`) resources | not yet |
 | Prompts, resource subscriptions, logging, completion | not yet |
 | Progress, cancellation, sampling, roots, elicitation, tasks | not yet |
-| Transports | stdio and WebSocket (via broker); no Streamable HTTP, so the MCP authorization chapter is out of scope for this package |
+| Transports | stdio, Streamable HTTP (client side), WebSocket via broker |
+| Streamable HTTP: sessions, `MCP-Protocol-Version`, SSE resumption, `DELETE` teardown | yes |
+| OAuth authorization (protected resource metadata, `WWW-Authenticate`) | not yet: bring your own headers via `IStreamableHttpTransportOptions.headers` |
 
 Tool execution failures come back as `isError: true` results rather than JSON-RPC errors, which is what the spec asks for so the model can self-correct. Protocol errors stay protocol errors: an unknown tool is `-32602`, an unknown resource `-32002`, a JSON-RPC batch `-32600` (batching was removed from MCP in `2025-06-18`).
+
+`McpResourceContent` is a union of a text and a binary variant, so reading one means narrowing on the field you need:
+
+```ts
+const content = await client.readResource("app://logo");
+const bytes = content.text !== undefined ? Buffer.from(content.text) : Buffer.from(content.blob, "base64");
+```
 
 ## Subpath entry points
 
@@ -407,8 +417,24 @@ The pattern scales to richer domains: a single behavior describing mesh operatio
 | `MultiplexTransport` | `@cyanmycelium/mcp-core/server` | Multiple servers sharing one WebSocket via envelope routing. |
 | `LoopbackTransport` | `@cyanmycelium/mcp-core/server` | Server and client in the same process. Tests, local dev, embedded use. |
 | `StdioTransport` | `@cyanmycelium/mcp-core/node` | Line-delimited JSON-RPC over stdin/stdout. The MCP standard for CLI agents. |
+| `StreamableHttpTransport` | `@cyanmycelium/mcp-core/node` | The MCP standard for remote servers: POST plus an SSE stream, with sessions and resumption. Client side. |
 
 Implement `IMessageTransport` for anything else (WebRTC, postMessage, gRPC).
+
+`StreamableHttpTransport` connects an `McpClient` to a remote MCP endpoint:
+
+```ts
+import { McpClient } from "@cyanmycelium/mcp-core/client";
+import { StreamableHttpTransport } from "@cyanmycelium/mcp-core/node";
+
+const transport = new StreamableHttpTransport("https://example.com/mcp", {
+    headers: { Authorization: `Bearer ${token}` },
+});
+const client = new McpClient({ name: "my-agent", version: "1.0.0" }, transport);
+await client.connect();
+```
+
+The client hands the negotiated revision to the transport, which stamps `MCP-Protocol-Version` on every subsequent request. Session ids are captured and echoed automatically, the standalone GET stream is opened after initialization (with or without a session) and re-established with `Last-Event-ID` when the server closes it, honouring the SSE `retry` delay. A session terminated server-side (HTTP 404) surfaces as a transport close, since recovering means a fresh `initialize`; call `client.connect()` again to start a new session. `close()` sends an HTTP DELETE to release the session.
 
 ## Package layout
 
