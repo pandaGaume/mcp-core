@@ -12,6 +12,7 @@ import type {
     McpToolResult,
 } from "../interfaces";
 import { createEventEmitter, IEventEmitter } from "../interfaces";
+import { isProtocolVersionSupported, MCP_LATEST_PROTOCOL_VERSION } from "../mcp.protocol";
 import { MultiplexTransport } from "../server/multiplex.transport";
 
 // ---------------------------------------------------------------------------
@@ -54,6 +55,7 @@ export class McpClient implements IMcpClient {
     private _pending = new Map<number, PendingRequest>();
     private _connected = false;
     private _serverInfo: McpServerInfo | undefined;
+    private _protocolVersion: string | undefined;
 
     private _onResourcesChanged?: IEventEmitter<void>;
     private _onToolsChanged?: IEventEmitter<void>;
@@ -81,6 +83,10 @@ export class McpClient implements IMcpClient {
 
     public get serverInfo(): McpServerInfo | undefined {
         return this._serverInfo;
+    }
+
+    public get protocolVersion(): string | undefined {
+        return this._protocolVersion;
     }
 
     public get onResourcesChanged(): IEventSource<void> | null {
@@ -116,14 +122,25 @@ export class McpClient implements IMcpClient {
             };
 
             this._transport.onOpen = () => {
-                // Perform the MCP handshake
+                // Perform the MCP handshake, announcing the newest revision we speak.
                 this._request("initialize", {
-                    protocolVersion: "2024-11-05",
+                    protocolVersion: MCP_LATEST_PROTOCOL_VERSION,
                     clientInfo: this._clientInfo,
                     capabilities: {},
                 })
                     .then((result) => {
                         const initResult = result as McpInitializeResult;
+
+                        // The server answers with the revision it will use, which may
+                        // differ from ours. The spec says a client that cannot speak it
+                        // should disconnect rather than trade messages it may misread.
+                        if (!isProtocolVersionSupported(initResult.protocolVersion)) {
+                            this._transport.close();
+                            reject(new Error(`McpClient: server requires unsupported MCP protocol version "${initResult.protocolVersion}"`));
+                            return;
+                        }
+
+                        this._protocolVersion = initResult.protocolVersion;
                         this._serverInfo = initResult.serverInfo;
                         this._connected = true;
 
@@ -144,9 +161,18 @@ export class McpClient implements IMcpClient {
         });
     }
 
+    /**
+     * Sends a `ping` and resolves when the server answers, rejecting on the
+     * usual request timeout. Use it to tell a live connection from a stale one.
+     */
+    public async ping(): Promise<void> {
+        await this._request("ping");
+    }
+
     public disconnect(): void {
         this._connected = false;
         this._serverInfo = undefined;
+        this._protocolVersion = undefined;
         this._rejectAllPending("McpClient: disconnected");
         this._transport.close();
         this._onResourcesChanged?.clear();
@@ -157,14 +183,12 @@ export class McpClient implements IMcpClient {
 
     // ── Resources ────────────────────────────────────────────────────────
 
-    public async listResources(): Promise<McpResource[]> {
-        const r = await this._request("resources/list");
-        return (r as { resources: McpResource[] }).resources;
+    public listResources(): Promise<McpResource[]> {
+        return this._listAll<McpResource>("resources/list", "resources");
     }
 
-    public async listResourceTemplates(): Promise<McpResourceTemplate[]> {
-        const r = await this._request("resources/templates/list");
-        return (r as { resourceTemplates: McpResourceTemplate[] }).resourceTemplates;
+    public listResourceTemplates(): Promise<McpResourceTemplate[]> {
+        return this._listAll<McpResourceTemplate>("resources/templates/list", "resourceTemplates");
     }
 
     public async readResource(uri: string): Promise<McpResourceContent> {
@@ -174,14 +198,45 @@ export class McpClient implements IMcpClient {
 
     // ── Tools ────────────────────────────────────────────────────────────
 
-    public async listTools(): Promise<McpTool[]> {
-        const r = await this._request("tools/list");
-        return (r as { tools: McpTool[] }).tools;
+    public listTools(): Promise<McpTool[]> {
+        return this._listAll<McpTool>("tools/list", "tools");
     }
 
     public async callTool(name: string, args: Record<string, unknown>): Promise<McpToolResult> {
         const r = await this._request("tools/call", { name, arguments: args });
         return r as McpToolResult;
+    }
+
+    // ── Pagination ───────────────────────────────────────────────────────
+
+    /**
+     * Drains a paginated list method into a single array.
+     *
+     * MCP list operations may return a page plus an opaque `nextCursor`; a
+     * client that ignores it silently sees only the first page. Cursors are
+     * treated as opaque, and a server echoing the same cursor twice ends the
+     * loop rather than spinning forever.
+     *
+     * @param method - The list method, e.g. `"tools/list"`.
+     * @param key    - The result field holding the page, e.g. `"tools"`.
+     */
+    private async _listAll<T>(method: string, key: string): Promise<T[]> {
+        const items: T[] = [];
+        const seen = new Set<string>();
+        let cursor: string | undefined;
+
+        for (;;) {
+            const r = (await this._request(method, cursor === undefined ? undefined : { cursor })) as Record<string, unknown>;
+            const page = r?.[key];
+            if (Array.isArray(page)) items.push(...(page as T[]));
+
+            const next = r?.["nextCursor"];
+            if (typeof next !== "string" || next.length === 0 || seen.has(next)) break;
+            seen.add(next);
+            cursor = next;
+        }
+
+        return items;
     }
 
     // ── JSON-RPC internals ───────────────────────────────────────────────
@@ -215,6 +270,14 @@ export class McpClient implements IMcpClient {
             return; // malformed — drop silently
         }
 
+        // Request from the server: it carries both an id and a method, and it
+        // must be answered. Leaving it unanswered hangs the server until its own
+        // timeout fires.
+        if (msg.id !== undefined && msg.method !== undefined) {
+            this._handleServerRequest(msg.id, msg.method);
+            return;
+        }
+
         // Response to a pending request
         if (msg.id !== undefined) {
             const pending = this._pending.get(msg.id);
@@ -241,6 +304,28 @@ export class McpClient implements IMcpClient {
                     break;
             }
         }
+    }
+
+    /**
+     * Answers a request issued by the server.
+     *
+     * `ping` gets the empty result the spec mandates. Anything else (sampling,
+     * roots, elicitation) is not implemented yet and gets a clean `-32601`, so
+     * the server learns the capability is missing instead of waiting out a
+     * timeout.
+     */
+    private _handleServerRequest(id: number, method: string): void {
+        if (method === "ping") {
+            this._transport.send(JSON.stringify({ jsonrpc: "2.0", id, result: {} }));
+            return;
+        }
+        this._transport.send(
+            JSON.stringify({
+                jsonrpc: "2.0",
+                id,
+                error: { code: -32601, message: `Method not found: ${method}` },
+            })
+        );
     }
 
     private _rejectAllPending(reason: string): void {

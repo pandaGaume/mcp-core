@@ -77,6 +77,25 @@ npm install @cyanmycelium/mcp-core
 
 Runs in both Node.js and the browser. In Node the typical transport is stdio (`StdioTransport`). In the browser the server lives next to the app and connects to an MCP broker over WebSocket (`DirectTransport`, `MultiplexTransport`); the broker relays JSON-RPC frames to and from the actual MCP client.
 
+## Protocol coverage
+
+Revisions accepted during the handshake: `2025-11-25` (default), `2025-06-18`, `2025-03-26`, `2024-11-05`. The server echoes the revision the client requested when it appears in that list, and answers with its newest otherwise; the client announces `2025-11-25` and disconnects if the server replies with a revision it cannot speak. Narrow the accepted set with `withOptions({ protocolVersions: [...] })`, or pin one revision by returning `protocolVersion` from your `IMcpInitializer`.
+
+| Area | Status |
+|---|---|
+| `initialize`, version negotiation, `notifications/initialized` | yes |
+| `tools/list`, `tools/call`, `notifications/tools/list_changed` | yes |
+| `resources/list`, `resources/templates/list`, `resources/read`, `notifications/resources/list_changed` | yes |
+| `structuredContent` on tool results | yes |
+| `ping` (both directions) | yes |
+| Pagination (`cursor` / `nextCursor`) | client follows it; server returns single pages |
+| `outputSchema`, `title`, `icons`, `annotations`, binary (`blob`) resources | not yet |
+| Prompts, resource subscriptions, logging, completion | not yet |
+| Progress, cancellation, sampling, roots, elicitation, tasks | not yet |
+| Transports | stdio and WebSocket (via broker); no Streamable HTTP, so the MCP authorization chapter is out of scope for this package |
+
+Tool execution failures come back as `isError: true` results rather than JSON-RPC errors, which is what the spec asks for so the model can self-correct. Protocol errors stay protocol errors: an unknown tool is `-32602`, an unknown resource `-32002`, a JSON-RPC batch `-32600` (batching was removed from MCP in `2025-06-18`).
+
 ## Subpath entry points
 
 ```ts

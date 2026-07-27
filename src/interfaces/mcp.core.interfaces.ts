@@ -204,10 +204,21 @@ export interface McpServerCapabilities {
  */
 export interface McpServerIdentity {
     /**
-     * The MCP protocol version the server will use for this session.
-     * Should match or be compatible with the version requested by the client.
+     * Pins the MCP protocol revision the server will answer with, bypassing
+     * negotiation.
+     *
+     * Leave it undefined — the recommended form — and the server negotiates
+     * against the revisions it supports: it echoes the revision the client
+     * requested when it can honour it, and falls back to its newest otherwise.
+     *
+     * Set it only to force a specific revision (e.g. a downstream client that
+     * misbehaves on newer ones). The value MUST be a revision the server can
+     * actually speak, since the client is entitled to disconnect on a revision
+     * it does not know.
+     *
+     * @see {@link negotiateProtocolVersion}
      */
-    protocolVersion: string;
+    protocolVersion?: string;
 
     /** Metadata identifying this server implementation. */
     serverInfo: McpServerInfo;
@@ -227,6 +238,13 @@ export interface McpServerIdentity {
  * @see {@link https://modelcontextprotocol.io/docs/concepts/architecture MCP Architecture}
  */
 export interface McpInitializeResult extends McpServerIdentity {
+    /**
+     * The revision agreed for this session. Unlike the optional pin on
+     * {@link McpServerIdentity}, it is always present on the wire: the server
+     * fills it from negotiation when the initializer did not pin one.
+     */
+    protocolVersion: string;
+
     /** The feature set this server supports, derived from registered behaviors. */
     capabilities: McpServerCapabilities;
 }
@@ -241,6 +259,7 @@ export interface McpInitializeResult extends McpServerIdentity {
  * - `resourcesRead`           → `resources/read`
  * - `toolsList`               → `tools/list`
  * - `toolsCall`               → `tools/call`
+ * - `ping`                    → `ping`
  *
  * Aggregates results across all registered {@link IMcpBehavior}s and their instances.
  */
@@ -251,4 +270,12 @@ export interface IMcpServerHandlers {
     resourcesRead(req: JsonRpcRequest): Promise<JsonRpcResponse>;
     toolsList(req: JsonRpcRequest): JsonRpcResponse;
     toolsCallAsync(req: JsonRpcRequest): Promise<JsonRpcResponse>;
+
+    /**
+     * Answers a `ping` request. Optional: when a custom handler leaves it out,
+     * the server replies with the empty result the spec mandates, so a handler
+     * only implements this to piggyback on ping (health probes, keep-alive
+     * bookkeeping).
+     */
+    ping?(req: JsonRpcRequest): JsonRpcResponse;
 }

@@ -68,6 +68,13 @@ export const Mcp = {
     /** `-32700` — request body could not be parsed as JSON. `id` is `null` per spec. */
     parseError: (): JsonRpcResponse => jsonRpcError(null, -32700, "Parse error"),
 
+    /**
+     * `-32600` — the payload is valid JSON but not a valid JSON-RPC request.
+     * `id` is `null` when it could not be determined (e.g. a batch array, which
+     * MCP removed in revision 2025-06-18).
+     */
+    invalidRequest: (id: string | number | null, message: string): JsonRpcResponse => jsonRpcError(id, -32600, message),
+
     /** `-32601` — the requested method does not exist on this server. */
     methodNotFound: (id: string | number, method: string): JsonRpcResponse => jsonRpcError(id, -32601, `Method not found: ${method}`),
 
@@ -83,10 +90,24 @@ export const Mcp = {
     /** `-32002` — no attached behavior instance matched the given URI. */
     instanceNotFound: (id: string | number, uri: string): JsonRpcResponse => jsonRpcError(id, -32002, `Instance not found: ${uri}`),
 
-    /** `-32601` — no tool matched the given name. */
-    toolNotFound: (id: string | number, name: string): JsonRpcResponse => jsonRpcError(id, -32601, `Tool not found: ${name}`),
+    /**
+     * `-32602` — no tool matched the given name.
+     *
+     * The MCP spec classifies an unknown tool as a protocol error and its
+     * reference example uses `-32602` (invalid params), not `-32601`: the
+     * `tools/call` method itself exists, it is the `name` argument that does not
+     * resolve.
+     */
+    toolNotFound: (id: string | number, name: string): JsonRpcResponse => jsonRpcError(id, -32602, `Unknown tool: ${name}`),
 
     // ── Results ──────────────────────────────────────────────────────────────
+
+    /**
+     * Wraps a `ping` result. The spec requires an empty result object — the
+     * receiver of a ping MUST answer promptly so the sender can tell a live
+     * connection from a stale one.
+     */
+    pingResult: (id: string | number): JsonRpcResponse => jsonRpcOk(id, {}),
 
     /** Wraps an `initialize` result. */
     initializeResult: (id: string | number, result: McpInitializeResult): JsonRpcResponse => jsonRpcOk(id, result),

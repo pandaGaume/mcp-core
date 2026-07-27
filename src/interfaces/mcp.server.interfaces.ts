@@ -44,16 +44,17 @@ export type McpGrammarResolver = (clientInfo: McpClientInfo, capabilities?: McpC
 /**
  * Handles the domain-level MCP initialization handshake.
  *
- * Responsible for protocol version negotiation and server identity.
- * Capabilities are intentionally excluded — the server derives them
- * automatically from all registered {@link IMcpBehavior}s at handshake time.
+ * Responsible for server identity. Capabilities are intentionally excluded —
+ * the server derives them automatically from all registered
+ * {@link IMcpBehavior}s at handshake time. Protocol version negotiation is
+ * likewise handled by the server; return
+ * {@link McpServerIdentity.protocolVersion} only to pin a revision explicitly.
  *
  * @example
  * ```typescript
  * class MyInitializer implements IMcpInitializer {
  *     initialize(_clientInfo: McpClientInfo, _caps: McpClientCapabilities): McpServerIdentity {
  *         return {
- *             protocolVersion: "2024-11-05",
  *             serverInfo: { name: "my-mcp-server", version: "1.0.0" },
  *             instructions: "Interact with the host application's active scene.",
  *         };
@@ -75,6 +76,19 @@ export interface IMcpInitializer {
  * Configuration options for an {@link IMcpServer} instance.
  */
 export interface IMcpServerOptions {
+    /**
+     * The MCP protocol revisions this server accepts during the `initialize`
+     * handshake, ordered newest first.
+     *
+     * The server echoes the revision the client requested when it appears in
+     * this list, and answers with the first entry otherwise. Narrow the list to
+     * cap the revision a server will speak; omit it to accept everything the
+     * package implements.
+     *
+     * @default MCP_SUPPORTED_PROTOCOL_VERSIONS
+     */
+    protocolVersions?: readonly string[];
+
     /**
      * Close the WebSocket connection after this many milliseconds of inactivity
      * (i.e. no message received). The timer resets on every incoming message.

@@ -1,4 +1,5 @@
 export * from "./interfaces/index";
+export * from "./mcp.protocol";
 export * from "./server/index";
 export * from "./client/index";
 export * from "./mcp.behaviorBase";
