@@ -1,11 +1,35 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { IMcpServer, IMessageTransport } from "../interfaces";
+import type { IMessageTransport } from "../interfaces";
 import { isProtocolVersionSupported } from "../mcp.protocol";
+import {
+    bearerToken,
+    buildChallengeHeader,
+    buildProtectedResourceMetadata,
+    McpAuthError,
+    scopesOf,
+    type IMcpPrincipal,
+    type IProtectedResourceMetadata,
+    type ITokenValidator,
+} from "../mcp.auth";
 import { HttpSessionTransport } from "./streamable-http.session";
 
 /**
- * Builds the MCP server that will serve one session.
+ * Whatever serves one session, seen by the endpoint.
+ *
+ * Deliberately narrower than {@link IMcpServer}: the endpoint runs the HTTP and
+ * session state machine and needs nothing beyond a way to start and stop the
+ * thing on the other end of the transport. An `IMcpServer` satisfies it, and so
+ * does a relay that forwards the session's frames somewhere else entirely —
+ * which is what lets a broker reuse this class instead of reimplementing it.
+ */
+export interface IMcpSessionHandle {
+    start(): void | Promise<void>;
+    stop(): void | Promise<void>;
+}
+
+/**
+ * Builds whatever will serve one session.
  *
  * The transport is supplied rather than chosen: the endpoint owns the HTTP
  * exchange and hands it over. Behaviors are normally shared across sessions,
@@ -13,7 +37,39 @@ import { HttpSessionTransport } from "./streamable-http.session";
  * is per-session, because a negotiated revision and a resolved grammar belong to
  * one client and not to the next.
  */
-export type McpServerFactory = (transport: IMessageTransport, sessionId: string) => IMcpServer | Promise<IMcpServer>;
+export type McpServerFactory = (transport: IMessageTransport, sessionId: string, principal?: IMcpPrincipal) => IMcpSessionHandle | Promise<IMcpSessionHandle>;
+
+/**
+ * Turns this endpoint into an OAuth 2.1 protected resource.
+ *
+ * Supplying it makes every request carry a valid bearer token, and makes the
+ * endpoint answer the `401` and `403` challenges the spec defines. Omitting it
+ * leaves the endpoint unauthenticated, which is only appropriate behind a
+ * trusted boundary.
+ */
+export interface IStreamableHttpAuthOptions {
+    /**
+     * Canonical URI identifying this endpoint, per RFC 8707. Tokens must name it
+     * in their audience, which is what stops a token issued for another service
+     * from being replayed here.
+     */
+    resource: string;
+
+    /** Verifies a token against {@link resource}. */
+    validator: ITokenValidator;
+
+    /** Authorization servers advertised in the metadata document. At least one. */
+    authorizationServers: readonly string[];
+
+    /** Absolute URL where the metadata document is served, advertised in challenges. */
+    metadataUrl: string;
+
+    /** Scopes advertised as understood by this resource. */
+    scopesSupported?: readonly string[];
+
+    /** Scopes a caller must hold. A token missing any of them gets `403`. */
+    requiredScopes?: readonly string[];
+}
 
 /** Options for {@link StreamableHttpEndpoint}. */
 export interface IStreamableHttpEndpointOptions {
@@ -46,13 +102,25 @@ export interface IStreamableHttpEndpointOptions {
      * Omit to keep sessions until they are deleted or the endpoint closes.
      */
     idleTimeoutMs?: number;
+
+    /** Protects the endpoint with OAuth 2.1. Omit to leave it open. */
+    auth?: IStreamableHttpAuthOptions;
 }
 
 interface ISession {
     readonly id: string;
     readonly transport: HttpSessionTransport;
-    readonly server: IMcpServer;
+    readonly server: IMcpSessionHandle;
     lastSeen: number;
+
+    /**
+     * The caller behind the most recent request on this session.
+     *
+     * Refreshed on every request rather than fixed at creation: a long-lived
+     * session outlives its token, and whoever inspects frames needs the identity
+     * that presented the current one.
+     */
+    principal?: IMcpPrincipal;
 }
 
 /**
@@ -88,6 +156,25 @@ export class StreamableHttpEndpoint {
         return this._sessions.size;
     }
 
+    /**
+     * The Protected Resource Metadata document for this endpoint, or
+     * `undefined` when it is not protected.
+     *
+     * Serve it yourself at {@link IStreamableHttpAuthOptions.metadataUrl} —
+     * routing stays with your application, and the document must be reachable
+     * **unauthenticated**, since a client fetches it precisely because it has no
+     * token yet.
+     */
+    protectedResourceMetadata(): IProtectedResourceMetadata | undefined {
+        const auth = this._options.auth;
+        if (!auth) return undefined;
+        return buildProtectedResourceMetadata({
+            resource: auth.resource,
+            authorizationServers: auth.authorizationServers,
+            scopesSupported: auth.scopesSupported,
+        });
+    }
+
     /** Handles one HTTP request. Never throws: every failure becomes a status code. */
     async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
         try {
@@ -98,15 +185,22 @@ export class StreamableHttpEndpoint {
                 return respond(res, 400, "unsupported_protocol_version", `Unsupported MCP-Protocol-Version: ${version}`);
             }
 
+            let principal: IMcpPrincipal | undefined;
+            try {
+                principal = await this._authenticate(req);
+            } catch (error) {
+                return this._writeChallenge(res, error);
+            }
+
             this._evictIdle();
 
             switch (req.method) {
                 case "POST":
-                    return await this._handlePost(req, res);
+                    return await this._handlePost(req, res, principal);
                 case "GET":
-                    return this._handleGet(req, res);
+                    return this._handleGet(req, res, principal);
                 case "DELETE":
-                    return this._handleDelete(req, res);
+                    return this._handleDelete(req, res, principal);
                 default:
                     res.setHeader("Allow", "GET, POST, DELETE");
                     return respond(res, 405, "method_not_allowed", `Unsupported method: ${req.method ?? "?"}`);
@@ -114,6 +208,48 @@ export class StreamableHttpEndpoint {
         } catch (error) {
             respond(res, 500, "internal_error", error instanceof Error ? error.message : "Internal error");
         }
+    }
+
+    /**
+     * Validates the request's bearer token and enforces the required scopes.
+     *
+     * @throws {McpAuthError} `401` with no usable token, `403` with one that
+     *         lacks a required scope.
+     */
+    private async _authenticate(req: IncomingMessage): Promise<IMcpPrincipal | undefined> {
+        const auth = this._options.auth;
+        if (!auth) return undefined;
+
+        const token = bearerToken(req.headers["authorization"]);
+        if (!token) throw new McpAuthError(401, "invalid_token", "Missing bearer token");
+
+        const claims = await auth.validator.validate(token, auth.resource);
+        const scopes = scopesOf(claims);
+
+        const required = auth.requiredScopes ?? [];
+        const missing = required.filter((scope) => !scopes.has(scope));
+        if (missing.length > 0) {
+            throw new McpAuthError(403, "insufficient_scope", `Missing required scope(s): ${missing.join(" ")}`, required.join(" "));
+        }
+
+        return { claims, scopes };
+    }
+
+    /** Writes an RFC 9728 challenge, always pointing at the metadata document. */
+    private _writeChallenge(res: ServerResponse, error: unknown): void {
+        const auth = this._options.auth;
+        const failure = error instanceof McpAuthError ? error : new McpAuthError(401, "invalid_token", error instanceof Error ? error.message : "Unauthorized");
+
+        res.setHeader(
+            "WWW-Authenticate",
+            buildChallengeHeader({
+                resourceMetadata: auth?.metadataUrl,
+                error: failure.code,
+                errorDescription: failure.description,
+                scope: failure.scope,
+            })
+        );
+        respond(res, failure.status, failure.code, failure.description ?? failure.code);
     }
 
     /** Terminates every session and releases their servers. */
@@ -130,7 +266,7 @@ export class StreamableHttpEndpoint {
     // Methods
     // -------------------------------------------------------------------------
 
-    private async _handlePost(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    private async _handlePost(req: IncomingMessage, res: ServerResponse, principal?: IMcpPrincipal): Promise<void> {
         const body = await readBody(req);
         let frame: unknown;
         try {
@@ -149,19 +285,21 @@ export class StreamableHttpEndpoint {
         // `initialize` is the one request that arrives without a session, and the
         // one whose response carries the session id back.
         if (method === "initialize" && !sessionId) {
-            const session = await this._createSession();
+            const session = await this._createSession(principal);
             res.setHeader("Mcp-Session-Id", session.id);
             return this._feed(session, body, res);
         }
 
         const session = this._resolve(sessionId, res);
         if (!session) return;
+        session.principal = principal;
         return this._feed(session, body, res);
     }
 
-    private _handleGet(req: IncomingMessage, res: ServerResponse): void {
+    private _handleGet(req: IncomingMessage, res: ServerResponse, principal?: IMcpPrincipal): void {
         const session = this._resolve(header(req, "mcp-session-id"), res);
         if (!session) return;
+        session.principal = principal;
 
         res.writeHead(200, {
             "Content-Type": "text/event-stream",
@@ -176,7 +314,7 @@ export class StreamableHttpEndpoint {
         req.on("close", () => session.transport.detachStream(res));
     }
 
-    private _handleDelete(req: IncomingMessage, res: ServerResponse): void {
+    private _handleDelete(req: IncomingMessage, res: ServerResponse, _principal?: IMcpPrincipal): void {
         const session = this._resolve(header(req, "mcp-session-id"), res);
         if (!session) return;
 
@@ -190,13 +328,13 @@ export class StreamableHttpEndpoint {
     // Sessions
     // -------------------------------------------------------------------------
 
-    private async _createSession(): Promise<ISession> {
+    private async _createSession(principal?: IMcpPrincipal): Promise<ISession> {
         const id = (this._options.sessionIdFactory ?? randomUUID)();
         const transport = new HttpSessionTransport(id);
-        const server = await this._options.createServer(transport, id);
+        const server = await this._options.createServer(transport, id, principal);
         await server.start();
 
-        const session: ISession = { id, transport, server, lastSeen: Date.now() };
+        const session: ISession = { id, transport, server, lastSeen: Date.now(), principal };
         this._sessions.set(id, session);
         return session;
     }

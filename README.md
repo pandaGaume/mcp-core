@@ -95,7 +95,8 @@ Revisions accepted during the handshake: `2025-11-25` (default), `2025-06-18`, `
 | Progress, cancellation, sampling, roots, elicitation, tasks | not yet |
 | Transports | stdio (server side), Streamable HTTP (both sides), loopback |
 | Streamable HTTP: sessions, `MCP-Protocol-Version`, SSE resumption, `DELETE` teardown | yes |
-| OAuth authorization (protected resource metadata, `WWW-Authenticate`) | not yet: bring your own headers via `IStreamableHttpTransportOptions.headers` |
+| OAuth 2.1 resource server: RFC 9728 metadata, `WWW-Authenticate` challenges, audience-bound tokens, 401/403 | yes, server side |
+| OAuth client flow: metadata discovery, PKCE, `resource` parameter, step-up | not yet: supply a token via `IStreamableHttpTransportOptions.headers` |
 
 Tool execution failures come back as `isError: true` results rather than JSON-RPC errors, which is what the spec asks for so the model can self-correct. Protocol errors stay protocol errors: an unknown tool is `-32602`, an unknown resource `-32002`, a JSON-RPC batch `-32600` (batching was removed from MCP in `2025-06-18`).
 
@@ -471,6 +472,29 @@ createServer((req, res) => void endpoint.handleRequest(req, res)).listen(3000);
 Mount it the same way in Express or Fastify. A `POST` carrying a request is answered as `application/json`; notifications get `202`; server-initiated messages travel on the standalone `GET` stream. Session ids are issued on the `initialize` response and required afterwards, `DELETE` terminates a session, and a request naming a terminated one gets `404` so the client knows to re-initialize.
 
 `Origin` is validated and refused with `403` unless listed in `allowedOrigins`, which is closed by default: without that check any web page can drive a local MCP server through DNS rebinding. A request with no `Origin` header cannot come from a browser and is allowed.
+
+### Protecting it with OAuth
+
+Pass `auth` and the endpoint becomes an OAuth 2.1 protected resource: it validates the bearer token, answers `401` and `403` with the RFC 9728 challenge, and hands the validated principal to your factory.
+
+```ts
+const endpoint = new StreamableHttpEndpoint({
+    createServer: (transport, sessionId, principal) => buildServerFor(transport, principal),
+    auth: {
+        resource: "https://mcp.example.com/mcp", // RFC 8707 canonical URI; tokens must name it
+        validator: myTokenValidator,             // you verify the token, however you like
+        authorizationServers: ["https://auth.example.com"],
+        metadataUrl: "https://mcp.example.com/.well-known/oauth-protected-resource/mcp",
+        requiredScopes: ["mcp:call"],
+    },
+});
+
+// Serve the discovery document yourself — unauthenticated, since a client
+// fetches it precisely because it has no token yet.
+endpoint.protectedResourceMetadata();
+```
+
+MCP defines no token format and no authorization server, so neither does this package: `ITokenValidator` is the single seam, and verifying a JWT stays with your application. Everything above it — the metadata document, the challenge header and its parser, the canonical resource URI, the 401/403 semantics — lives in `@cyanmycelium/mcp-core` itself rather than under `/node`, because a client needs the same pieces in reverse and they depend on nothing.
 
 The client hands the negotiated revision to the transport, which stamps `MCP-Protocol-Version` on every subsequent request. Session ids are captured and echoed automatically, the standalone GET stream is opened after initialization (with or without a session) and re-established with `Last-Event-ID` when the server closes it, honouring the SSE `retry` delay. A session terminated server-side (HTTP 404) surfaces as a transport close, since recovering means a fresh `initialize`; call `client.connect()` again to start a new session. `close()` sends an HTTP DELETE to release the session.
 

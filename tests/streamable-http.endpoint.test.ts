@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { McpClient, McpServerBuilder, McpToolResults } from "../src";
 import { StreamableHttpEndpoint, StreamableHttpTransport } from "../src/node/index";
+import { McpAuthError, parseChallengeHeader, type IMcpPrincipal, type ITokenValidator } from "../src/mcp.auth";
 import type { IMcpBehavior, IMessageTransport, McpResource, McpResourceContent, McpResourceTemplate, McpTool, McpToolResult } from "../src/interfaces";
 
 // ---------------------------------------------------------------------------
@@ -227,5 +228,83 @@ describe("guards", () => {
         const res = await fetch(harness.url, { method: "PUT", body: "{}" });
         expect(res.status).toBe(405);
         expect(res.headers.get("allow")).toContain("POST");
+    });
+});
+
+// ---------------------------------------------------------------------------
+// OAuth 2.1 resource server
+// ---------------------------------------------------------------------------
+
+const RESOURCE = "https://mcp.test/mcp";
+const METADATA_URL = "https://mcp.test/.well-known/oauth-protected-resource/mcp";
+
+/** Accepts "good" (with scope) and "noscope"; rejects everything else. */
+const validator: ITokenValidator = {
+    async validate(token, resource) {
+        if (token === "good") return { sub: "u1", aud: resource, scope: "mcp:call" };
+        if (token === "noscope") return { sub: "u2", aud: resource };
+        throw new McpAuthError(401, "invalid_token", "bad token");
+    },
+};
+
+const AUTH = { resource: RESOURCE, validator, authorizationServers: ["https://as.test"], metadataUrl: METADATA_URL, scopesSupported: ["mcp:call"], requiredScopes: ["mcp:call"] };
+
+describe("protected resource", () => {
+    it("challenges an unauthenticated request with 401 and points at the metadata", async () => {
+        harness = await startEndpoint({ auth: AUTH });
+
+        const res = await fetch(harness.url, { method: "POST", body: INIT });
+        expect(res.status).toBe(401);
+
+        const challenge = parseChallengeHeader(res.headers.get("www-authenticate"));
+        expect(challenge?.resourceMetadata).toBe(METADATA_URL);
+        expect(challenge?.error).toBe("invalid_token");
+    });
+
+    it("refuses a token missing a required scope with 403 and names the scope", async () => {
+        harness = await startEndpoint({ auth: AUTH });
+
+        const res = await fetch(harness.url, { method: "POST", headers: { authorization: "Bearer noscope" }, body: INIT });
+        expect(res.status).toBe(403);
+
+        const challenge = parseChallengeHeader(res.headers.get("www-authenticate"));
+        expect(challenge?.error).toBe("insufficient_scope");
+        expect(challenge?.scope).toBe("mcp:call");
+    });
+
+    it("lets a valid token through and hands the principal to the factory", async () => {
+        let seen: IMcpPrincipal | undefined;
+        harness = await startEndpoint({
+            auth: AUTH,
+            createServer: (transport, _id, principal) => {
+                seen = principal;
+                return new McpServerBuilder().withName("test-app").withTransport(transport).register(new EchoBehavior()).build();
+            },
+        });
+
+        const client = new McpClient({ name: "agent", version: "1.0.0" }, new StreamableHttpTransport(harness.url, { headers: { Authorization: "Bearer good" } }));
+        await client.connect();
+        expect((await client.listTools()).length).toBe(1);
+
+        expect(seen?.claims.sub).toBe("u1");
+        expect(seen?.scopes.has("mcp:call")).toBe(true);
+
+        client.disconnect();
+    });
+
+    it("publishes a metadata document naming its resource and authorization server", async () => {
+        harness = await startEndpoint({ auth: AUTH });
+
+        expect(harness.endpoint.protectedResourceMetadata()).toEqual({
+            resource: RESOURCE,
+            authorization_servers: ["https://as.test"],
+            bearer_methods_supported: ["header"],
+            scopes_supported: ["mcp:call"],
+        });
+    });
+
+    it("publishes nothing when the endpoint is not protected", async () => {
+        harness = await startEndpoint();
+        expect(harness.endpoint.protectedResourceMetadata()).toBeUndefined();
     });
 });
