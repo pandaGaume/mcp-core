@@ -93,7 +93,7 @@ Revisions accepted during the handshake: `2025-11-25` (default), `2025-06-18`, `
 | Pagination (`cursor` / `nextCursor`) | client follows it; server returns single pages |
 | Prompts, resource subscriptions, logging, completion | not yet |
 | Progress, cancellation, sampling, roots, elicitation, tasks | not yet |
-| Transports | stdio (server side), Streamable HTTP (client side), loopback |
+| Transports | stdio (server side), Streamable HTTP (both sides), loopback |
 | Streamable HTTP: sessions, `MCP-Protocol-Version`, SSE resumption, `DELETE` teardown | yes |
 | OAuth authorization (protected resource metadata, `WWW-Authenticate`) | not yet: bring your own headers via `IStreamableHttpTransportOptions.headers` |
 
@@ -427,6 +427,7 @@ A server never opens its own connection: it is handed a transport, and `withTran
 |---|---|---|
 | `StdioTransport` | `@cyanmycelium/mcp-core/node` | Line-delimited JSON-RPC over stdin/stdout. The MCP standard for a server launched as a subprocess. |
 | `StreamableHttpTransport` | `@cyanmycelium/mcp-core/node` | The MCP standard for remote servers: POST plus an SSE stream, with sessions and resumption. Client side. |
+| `StreamableHttpEndpoint` | `@cyanmycelium/mcp-core/node` | The same transport, server side, as a `(req, res)` handler you mount on your own HTTP server. |
 | `LoopbackTransport` | `@cyanmycelium/mcp-core/server` | Server and client in the same process. Tests, local dev, embedded use. |
 
 Implement `IMessageTransport` for anything else (WebRTC, postMessage, gRPC). The WebSocket tunnel to a CyanMycelium broker lives in [`@cyanmycelium/mcp-broker-provider`](https://www.npmjs.com/package/@cyanmycelium/mcp-broker-provider), which is where `DirectTransport` and `MultiplexTransport` moved in `0.5.0`.
@@ -447,6 +448,29 @@ await client.connect();
 ```
 
 A plain object works too and is snapshotted at construction. OAuth itself is not implemented: the transport carries whatever credential you give it, and does not yet discover an authorization server or run a token flow.
+
+### Serving Streamable HTTP
+
+`StreamableHttpEndpoint` is the other half: a request handler, not a server. It opens no socket, so listening, TLS and routing stay with your application while sessions, framing and the protocol's status codes stay with the package.
+
+```ts
+import { createServer } from "node:http";
+import { McpServerBuilder } from "@cyanmycelium/mcp-core/server";
+import { StreamableHttpEndpoint } from "@cyanmycelium/mcp-core/node";
+
+const endpoint = new StreamableHttpEndpoint({
+    // One MCP server per session: a negotiated revision and a resolved grammar
+    // belong to one client. Behaviors are shared — they point at your state.
+    createServer: (transport) => new McpServerBuilder().withName("my-app").withTransport(transport).register(behavior).build(),
+    allowedOrigins: ["https://app.example.com"],
+});
+
+createServer((req, res) => void endpoint.handleRequest(req, res)).listen(3000);
+```
+
+Mount it the same way in Express or Fastify. A `POST` carrying a request is answered as `application/json`; notifications get `202`; server-initiated messages travel on the standalone `GET` stream. Session ids are issued on the `initialize` response and required afterwards, `DELETE` terminates a session, and a request naming a terminated one gets `404` so the client knows to re-initialize.
+
+`Origin` is validated and refused with `403` unless listed in `allowedOrigins`, which is closed by default: without that check any web page can drive a local MCP server through DNS rebinding. A request with no `Origin` header cannot come from a browser and is allowed.
 
 The client hands the negotiated revision to the transport, which stamps `MCP-Protocol-Version` on every subsequent request. Session ids are captured and echoed automatically, the standalone GET stream is opened after initialization (with or without a session) and re-established with `Last-Event-ID` when the server closes it, honouring the SSE `retry` delay. A session terminated server-side (HTTP 404) surfaces as a transport close, since recovering means a fresh `initialize`; call `client.connect()` again to start a new session. `close()` sends an HTTP DELETE to release the session.
 
