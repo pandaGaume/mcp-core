@@ -215,7 +215,7 @@ export interface IMcpBehaviorAdapter extends IMcpRuntimeOperations {
  * That cardinality is entirely determined by the injected {@link IMcpBehaviorAdapter}.
  *
  * Lifecycle:
- * - Registered at design time via {@link IMcpServerBuilder.withBehavior}
+ * - Registered at design time via {@link IMcpServerBuilder.register}
  * - Or registered at runtime via {@link IMcpServer.addBehavior}
  *
  * @example

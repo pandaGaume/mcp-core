@@ -4,3 +4,5 @@ export type { IStreamableHttpTransportOptions } from "./streamable-http.transpor
 export { StreamableHttpEndpoint } from "./streamable-http.endpoint";
 export type { IStreamableHttpEndpointOptions, IMcpSessionHandle, McpServerFactory } from "./streamable-http.endpoint";
 export { HttpSessionTransport } from "./streamable-http.session";
+export { ChildProcessTransport } from "./childprocess.transport";
+export type { IChildProcessTransportOptions, ChildProcessStderr } from "./childprocess.transport";

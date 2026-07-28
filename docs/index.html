@@ -41,7 +41,7 @@
 <!-- ================================ HERO =============================== -->
 <section class="hero">
   <div class="shell">
-    <div class="eyebrow"><span class="dot"></span>typescript · model context protocol · pre-release</div>
+    <div class="eyebrow"><span class="dot"></span>typescript · model context protocol · 2025-11-25</div>
 
     <h1 class="hero-title">
       <span class="at">@</span>cyanmycelium<span class="sl">/</span>mcp-core
@@ -53,9 +53,9 @@
     </p>
 
     <div class="badges">
-      <span class="badge accent"><span class="k">status</span><span class="v">pre-release</span></span>
-      <span class="badge"><span class="k">npm</span><span class="v">v0.0.0</span></span>
-      <span class="badge"><span class="k">public&nbsp;API</span><span class="v">v0.1.0</span></span>
+      <span class="badge accent"><span class="k">spec</span><span class="v">2025-11-25</span></span>
+      <span class="badge"><span class="k">npm</span><span class="v">v0.6.0</span></span>
+      <span class="badge"><span class="k">transports</span><span class="v">stdio&nbsp;·&nbsp;http</span></span>
       <span class="badge"><span class="k">license</span><span class="v">Apache-2.0</span></span>
       <span class="badge"><span class="k">node</span><span class="v">≥&nbsp;20.11</span></span>
     </div>
@@ -348,7 +348,7 @@
 
 <span class="tk-c">// 4. Wire them up and start.</span>
 <span class="tk-k">const</span> <span class="tk-p">server</span> <span class="tk-pu">=</span> <span class="tk-k">new</span> <span class="tk-t">McpServerBuilder</span><span class="tk-pu">()</span>
-  <span class="tk-pu">.</span><span class="tk-f">withBehavior</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">CounterBehavior</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">CounterAdapter</span><span class="tk-pu">()))</span>
+  <span class="tk-pu">.</span><span class="tk-f">register</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">CounterBehavior</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">CounterAdapter</span><span class="tk-pu">()))</span>
   <span class="tk-pu">.</span><span class="tk-f">withTransport</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">StdioTransport</span><span class="tk-pu">())</span>
   <span class="tk-pu">.</span><span class="tk-f">build</span><span class="tk-pu">()</span>
 
@@ -392,7 +392,7 @@
 <span class="tk-pu">})</span>
 
 <span class="tk-k">const</span> <span class="tk-p">server</span> <span class="tk-pu">=</span> <span class="tk-k">new</span> <span class="tk-t">McpServerBuilder</span><span class="tk-pu">()</span>
-  <span class="tk-pu">.</span><span class="tk-f">withBehavior</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">CounterBehavior</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">CounterAdapter</span><span class="tk-pu">()))</span>
+  <span class="tk-pu">.</span><span class="tk-f">register</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">CounterBehavior</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">CounterAdapter</span><span class="tk-pu">()))</span>
   <span class="tk-pu">.</span><span class="tk-f">withGrammarResolver</span><span class="tk-pu">((</span><span class="tk-p">clientInfo</span><span class="tk-pu">) =&gt;</span>
     <span class="tk-p">clientInfo</span><span class="tk-pu">.</span><span class="tk-p">name</span> <span class="tk-pu">===</span> <span class="tk-s">'claude-desktop'</span> <span class="tk-pu">?</span> <span class="tk-s">'concise'</span> <span class="tk-pu">:</span> <span class="tk-s">'verbose'</span>
   <span class="tk-pu">)</span>
@@ -422,8 +422,8 @@
 <span class="tk-pu">})</span>
 
 <span class="tk-k">const</span> <span class="tk-p">server</span> <span class="tk-pu">=</span> <span class="tk-k">new</span> <span class="tk-t">McpServerBuilder</span><span class="tk-pu">()</span>
-  <span class="tk-pu">.</span><span class="tk-f">withBehavior</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">CounterBehavior</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">CounterAdapter</span><span class="tk-pu">()))</span>
-  <span class="tk-pu">.</span><span class="tk-f">withBehavior</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">McpGrammarBehavior</span><span class="tk-pu">(</span><span class="tk-p">store</span><span class="tk-pu">))</span>
+  <span class="tk-pu">.</span><span class="tk-f">register</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">CounterBehavior</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">CounterAdapter</span><span class="tk-pu">()))</span>
+  <span class="tk-pu">.</span><span class="tk-f">register</span><span class="tk-pu">(</span><span class="tk-k">new</span> <span class="tk-t">McpGrammarBehavior</span><span class="tk-pu">(</span><span class="tk-p">store</span><span class="tk-pu">))</span>
   <span class="tk-pu">.</span><span class="tk-f">withGrammarStore</span><span class="tk-pu">(</span><span class="tk-p">store</span><span class="tk-pu">)</span>
   <span class="tk-pu">.</span><span class="tk-f">build</span><span class="tk-pu">()</span>
 
@@ -547,32 +547,37 @@
         </thead>
         <tbody>
           <tr>
-            <td><code>DirectTransport</code></td>
-            <td><code>@cyanmycelium/mcp-core/server</code></td>
-            <td>One server, one WebSocket. The default.</td>
+            <td><code>StdioTransport</code></td>
+            <td><code>@cyanmycelium/mcp-core/node</code></td>
+            <td>Line-delimited JSON-RPC over <strong>this</strong> process's stdin / stdout, for a server someone else launched.</td>
           </tr>
           <tr>
-            <td><code>MultiplexTransport</code></td>
-            <td><code>@cyanmycelium/mcp-core/server</code></td>
-            <td>Multiple servers sharing one WebSocket via envelope routing.</td>
+            <td><code>ChildProcessTransport</code></td>
+            <td><code>@cyanmycelium/mcp-core/node</code></td>
+            <td>The mirror: launches an MCP server as a subprocess and speaks to <strong>its</strong> stdio.</td>
+          </tr>
+          <tr>
+            <td><code>StreamableHttpTransport</code></td>
+            <td><code>@cyanmycelium/mcp-core/node</code></td>
+            <td>Client side of the HTTP transport: POST plus an SSE stream, with sessions and resumption.</td>
+          </tr>
+          <tr>
+            <td><code>StreamableHttpEndpoint</code></td>
+            <td><code>@cyanmycelium/mcp-core/node</code></td>
+            <td>Server side, as a <code>(req, res)</code> handler you mount on your own HTTP server. Opens no socket.</td>
           </tr>
           <tr>
             <td><code>LoopbackTransport</code></td>
             <td><code>@cyanmycelium/mcp-core/server</code></td>
             <td>Server and client in the same process. Tests, local dev, embedded use.</td>
           </tr>
-          <tr>
-            <td><code>StdioTransport</code></td>
-            <td><code>@cyanmycelium/mcp-core/node</code></td>
-            <td>Line-delimited JSON-RPC over stdin / stdout. The MCP standard for CLI agents.</td>
-          </tr>
         </tbody>
       </table>
     </div>
 
-    <p>Implement <code class="inline">IMessageTransport</code> for anything else (WebRTC, postMessage, gRPC).</p>
+    <p>Both transports the specification defines, in both roles. Implement <code class="inline">IMessageTransport</code> for anything else (WebRTC, postMessage, gRPC).</p>
 
-    <p class="caption"><strong>Nota.</strong> Runs in both Node.js and the browser. In the browser the server connects to an MCP broker over WebSocket; the broker relays JSON-RPC frames to and from the actual MCP client.</p>
+    <p class="caption"><strong>Nota.</strong> Runs in both Node.js and the browser. The WebSocket tunnel to a CyanMycelium broker is topology rather than protocol, so it lives in <code class="inline">@cyanmycelium/mcp-broker-provider</code> and this package stays a faithful implementation of the specification and nothing else.</p>
   </div>
 </section>
 
@@ -587,11 +592,12 @@
         <span class="lang">TypeScript</span>
         <button class="copy-btn" data-copy-block>Copy</button>
       </div>
-<pre><code><span class="tk-k">import</span> <span class="tk-pu">{</span> <span class="tk-t">McpBehavior</span><span class="tk-pu">,</span>     <span class="tk-t">McpAdapterBase</span>     <span class="tk-pu">}</span> <span class="tk-k">from</span> <span class="tk-s">'@cyanmycelium/mcp-core'</span>
-<span class="tk-k">import</span> <span class="tk-pu">{</span> <span class="tk-t">McpServerBuilder</span><span class="tk-pu">,</span> <span class="tk-t">DirectTransport</span>    <span class="tk-pu">}</span> <span class="tk-k">from</span> <span class="tk-s">'@cyanmycelium/mcp-core/server'</span>
-<span class="tk-k">import</span> <span class="tk-pu">{</span> <span class="tk-t">McpClient</span><span class="tk-pu">,</span>        <span class="tk-t">WebSocketTransport</span> <span class="tk-pu">}</span> <span class="tk-k">from</span> <span class="tk-s">'@cyanmycelium/mcp-core/client'</span>
-<span class="tk-k">import</span> <span class="tk-pu">{</span> <span class="tk-t">McpGrammar</span><span class="tk-pu">,</span>       <span class="tk-t">McpGrammarStore</span>    <span class="tk-pu">}</span> <span class="tk-k">from</span> <span class="tk-s">'@cyanmycelium/mcp-core/grammar'</span>
-<span class="tk-k">import</span> <span class="tk-pu">{</span> <span class="tk-t">StdioTransport</span>                       <span class="tk-pu">}</span> <span class="tk-k">from</span> <span class="tk-s">'@cyanmycelium/mcp-core/node'</span>
+<pre><code><span class="tk-k">import</span> <span class="tk-pu">{</span> <span class="tk-t">McpBehavior</span><span class="tk-pu">,</span> <span class="tk-t">McpAdapterBase</span><span class="tk-pu">,</span> <span class="tk-t">McpGrammar</span><span class="tk-pu">,</span> <span class="tk-t">McpGrammarStore</span> <span class="tk-pu">}</span> <span class="tk-k">from</span> <span class="tk-s">'@cyanmycelium/mcp-core'</span>
+<span class="tk-k">import</span> <span class="tk-pu">{</span> <span class="tk-t">McpServerBuilder</span><span class="tk-pu">,</span> <span class="tk-t">LoopbackTransport</span> <span class="tk-pu">}</span> <span class="tk-k">from</span> <span class="tk-s">'@cyanmycelium/mcp-core/server'</span>
+<span class="tk-k">import</span> <span class="tk-pu">{</span> <span class="tk-t">McpClient</span> <span class="tk-pu">}</span> <span class="tk-k">from</span> <span class="tk-s">'@cyanmycelium/mcp-core/client'</span>
+<span class="tk-k">import</span> <span class="tk-pu">{</span> <span class="tk-t">LlmClient</span> <span class="tk-pu">}</span> <span class="tk-k">from</span> <span class="tk-s">'@cyanmycelium/mcp-core/llm'</span>
+<span class="tk-k">import</span> <span class="tk-pu">{</span> <span class="tk-t">StdioTransport</span><span class="tk-pu">,</span> <span class="tk-t">ChildProcessTransport</span><span class="tk-pu">,</span>
+         <span class="tk-t">StreamableHttpTransport</span><span class="tk-pu">,</span> <span class="tk-t">StreamableHttpEndpoint</span> <span class="tk-pu">}</span> <span class="tk-k">from</span> <span class="tk-s">'@cyanmycelium/mcp-core/node'</span>
 </code></pre>
     </div>
 
@@ -615,6 +621,11 @@
     </div>
 
     <p>Requires Node 20.11+. Apache-2.0.</p>
+
+    <p class="caption"><strong>Next.</strong> Wiring a server to a real client is covered in the
+      <a href="https://github.com/pandaGaume/mcp-core/blob/main/HOWTO.md" target="_blank" rel="noopener">HOW-TO</a>:
+      stdio for the clients installed on a machine (Claude Desktop, Claude Code, Codex), HTTPS for the ones
+      running on a vendor's servers (Claude.ai in a browser, ChatGPT on the web), and how to tell which case you are in.</p>
   </div>
 </section>
 

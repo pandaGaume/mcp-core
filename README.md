@@ -71,11 +71,41 @@ Each layer is independently testable. Each layer can be swapped without touching
 npm install @cyanmycelium/mcp-core
 ```
 
+Wiring a server to a real client is covered in **[HOWTO.md](HOWTO.md)**: stdio for the clients installed on a machine (Claude Desktop, Claude Code, Codex), HTTPS for the ones running on a vendor's servers (Claude.ai in a browser, ChatGPT on the web), and how to tell which case you are in.
+
 ## Runtimes
 
-Runs in both Node.js and the browser. This package implements the two transports the MCP specification defines: stdio (`StdioTransport`, server side) and Streamable HTTP (`StreamableHttpTransport`, client side), plus `LoopbackTransport` for a server and client sharing a process.
+Runs in both Node.js and the browser, and implements the two transports the MCP specification defines: stdio and Streamable HTTP, plus `LoopbackTransport` for a server and client sharing a process.
 
-A browser application that wants to expose its MCP server to the outside world reaches an MCP broker over a WebSocket tunnel. That tunnel is CyanMycelium topology rather than protocol, so it lives in [`@cyanmycelium/mcp-broker-provider`](https://www.npmjs.com/package/@cyanmycelium/mcp-broker-provider) and this package stays a faithful implementation of the specification and nothing else.
+Roles matter here, because a transport means two opposite things depending on which end you are. A server launched as a subprocess speaks through its own `stdin`/`stdout`; the client that launched it speaks through the child's. Over HTTP, one side issues requests and the other terminates them.
+
+| Transport | Server side | Client side |
+|---|---|---|
+| stdio | `StdioTransport` | `ChildProcessTransport` |
+| Streamable HTTP | `StreamableHttpEndpoint` | `StreamableHttpTransport` |
+| loopback | `LoopbackTransport` (both ends of one pair) | |
+
+Both standard transports, both roles.
+
+## What to import for what
+
+| What you are building | Packages | Piece to use |
+|---|---|---|
+| MCP server launched as a subprocess (Claude Desktop, a CLI agent) | `mcp-core` | `StdioTransport` |
+| MCP server reachable over HTTP by remote clients | `mcp-core` | `StreamableHttpEndpoint` |
+| MCP client talking to a remote server | `mcp-core` | `StreamableHttpTransport` |
+| MCP server and client inside one process | `mcp-core` | `LoopbackTransport` |
+| MCP server inside a browser, exposed to the outside | `mcp-core` + [`mcp-broker-provider`](https://www.npmjs.com/package/@cyanmycelium/mcp-broker-provider) | `MultiplexTransport` |
+| Several servers federated behind one endpoint, with central auth | the above, plus [`mcp-broker`](https://www.npmjs.com/package/@cyanmycelium/mcp-broker) **run as a process** | — |
+| MCP client driving a third-party server as a subprocess (`npx some-mcp-server`) | `mcp-core` | `ChildProcessTransport` |
+
+Two readings that trip people up.
+
+A Node MCP server needs **nothing but this package**. The broker is a relay, not a way to write a server: you reach for it when you have several servers to federate, credentials to centralise, or browsers to get out of — not to expose one server.
+
+And the broker is a process you run (`npx @cyanmycelium/mcp-broker`), not a dependency you bundle. Your server stays on `mcp-core` and publishes itself into a slot; what you pay is an extra process, not extra code in your artifact.
+
+The WebSocket tunnel to that broker is CyanMycelium topology rather than protocol, which is why it lives in `mcp-broker-provider` and not here: this package stays a faithful implementation of the specification and nothing else.
 
 ## Protocol coverage
 
@@ -93,7 +123,7 @@ Revisions accepted during the handshake: `2025-11-25` (default), `2025-06-18`, `
 | Pagination (`cursor` / `nextCursor`) | client follows it; server returns single pages |
 | Prompts, resource subscriptions, logging, completion | not yet |
 | Progress, cancellation, sampling, roots, elicitation, tasks | not yet |
-| Transports | stdio (server side), Streamable HTTP (both sides), loopback |
+| Transports | stdio and Streamable HTTP, both roles each, plus loopback |
 | Streamable HTTP: sessions, `MCP-Protocol-Version`, SSE resumption, `DELETE` teardown | yes |
 | OAuth 2.1 resource server: RFC 9728 metadata, `WWW-Authenticate` challenges, audience-bound tokens, 401/403 | yes, server side |
 | OAuth client flow: metadata discovery, PKCE, `resource` parameter, step-up | not yet: supply a token via `IStreamableHttpTransportOptions.headers` |
@@ -111,13 +141,17 @@ const bytes = content.text !== undefined ? Buffer.from(content.text) : Buffer.fr
 
 ```ts
 import { McpBehavior, McpAdapterBase, McpGrammar, McpToolResults } from "@cyanmycelium/mcp-core";
+import { negotiateProtocolVersion, parseChallengeHeader }          from "@cyanmycelium/mcp-core"; // protocol + auth primitives
 import { McpServer, McpServerBuilder, LoopbackTransport }          from "@cyanmycelium/mcp-core/server";
 import { McpClient }                                               from "@cyanmycelium/mcp-core/client";
 import { LlmClient }                                               from "@cyanmycelium/mcp-core/llm";
-import { StdioTransport }                                          from "@cyanmycelium/mcp-core/node"; // Node-only
+import { StdioTransport, ChildProcessTransport,
+         StreamableHttpTransport, StreamableHttpEndpoint }         from "@cyanmycelium/mcp-core/node"; // Node-only
 ```
 
 Tree-shaking ensures browser bundles never pull `node:*` modules.
+
+The root entry point holds everything that depends on nothing: the behavior stack, protocol-version negotiation, and the OAuth pieces (metadata document, challenge building **and parsing**, canonical resource URI). They sit there rather than under `/node` because a browser client needs the same pieces in reverse — it parses the challenge a server builds.
 
 ## Quick start: a minimal MCP server
 
@@ -426,12 +460,40 @@ A server never opens its own connection: it is handed a transport, and `withTran
 
 | Transport | Module | Use case |
 |---|---|---|
-| `StdioTransport` | `@cyanmycelium/mcp-core/node` | Line-delimited JSON-RPC over stdin/stdout. The MCP standard for a server launched as a subprocess. |
+| `StdioTransport` | `@cyanmycelium/mcp-core/node` | Line-delimited JSON-RPC over **this** process's stdin/stdout, for a server that someone else launched. |
+| `ChildProcessTransport` | `@cyanmycelium/mcp-core/node` | The mirror: launches an MCP server as a subprocess and speaks to **its** stdio. How most published servers are actually run. |
 | `StreamableHttpTransport` | `@cyanmycelium/mcp-core/node` | The MCP standard for remote servers: POST plus an SSE stream, with sessions and resumption. Client side. |
 | `StreamableHttpEndpoint` | `@cyanmycelium/mcp-core/node` | The same transport, server side, as a `(req, res)` handler you mount on your own HTTP server. |
 | `LoopbackTransport` | `@cyanmycelium/mcp-core/server` | Server and client in the same process. Tests, local dev, embedded use. |
 
 Implement `IMessageTransport` for anything else (WebRTC, postMessage, gRPC). The WebSocket tunnel to a CyanMycelium broker lives in [`@cyanmycelium/mcp-broker-provider`](https://www.npmjs.com/package/@cyanmycelium/mcp-broker-provider), which is where `DirectTransport` and `MultiplexTransport` moved in `0.5.0`.
+
+### Driving a server you launch
+
+`ChildProcessTransport` is what lets an `McpClient` use the servers people actually publish, which ship as a command rather than a listening endpoint:
+
+```ts
+import { McpClient } from "@cyanmycelium/mcp-core/client";
+import { ChildProcessTransport } from "@cyanmycelium/mcp-core/node";
+
+const transport = new ChildProcessTransport({
+    command: "npx",
+    args: ["-y", "some-mcp-server"],
+    // stdio servers take their credentials from the environment: the spec
+    // reserves the OAuth flow for HTTP transports.
+    env: { API_TOKEN: process.env.API_TOKEN ?? "" },
+    stderr: (line) => console.warn(`[server] ${line}`),
+});
+
+const client = new McpClient({ name: "my-agent", version: "1.0.0" }, transport);
+await client.connect();
+```
+
+`close()` follows the shutdown sequence the spec prescribes rather than killing outright: it closes the child's stdin so the server can finish on its own, sends `SIGTERM` if it lingers, then `SIGKILL`. Await `transport.exited` to know when the process is really gone.
+
+A line on `stderr` means nothing is wrong: servers are explicitly allowed to log anything there, so it is routed to you and never mistaken for protocol.
+
+### Reaching a remote server
 
 `StreamableHttpTransport` connects an `McpClient` to a remote MCP endpoint:
 
@@ -502,26 +564,33 @@ The client hands the negotiated revision to the transport, which stamps `MCP-Pro
 
 ```
 src/
-  index.ts                       interfaces + behavior/adapter/grammar + tool results
+  index.ts                       everything isomorphic, re-exported
   interfaces/                    all shared contracts (one file per topic + barrel)
+  mcp.protocol.ts                revisions supported + version negotiation
+  mcp.auth.ts                    OAuth resource-server primitives (metadata, challenge, RFC 8707 URI)
   mcp.adapter.ts                 McpAdapterBase
   mcp.behavior.ts                McpBehavior (extends McpBehaviorBase)
   mcp.behaviorBase.ts            McpBehaviorBase, McpBehaviorOptions(Builder)
   mcp.grammar.ts                 McpGrammar (layer + merge + fromJSON/toJSON)
   mcp.grammarStore.ts            McpGrammarStore (persistable, observable)
   mcp.grammarBehavior.ts         McpGrammarBehavior (store exposed as MCP behavior)
-  mcp.toolResult.ts              McpToolResults.{text,json,resource,image,error}
-  server/                        McpServer, McpServerBuilder, JSON-RPC helpers, transports
+  mcp.toolResult.ts              McpToolResults.{text,json,resource,link,image,audio,error}
+  mcp.resolver.ts                grammar key resolution from client identity
+  server/                        McpServer, McpServerBuilder, JSON-RPC helpers, LoopbackTransport
   client/                        McpClient
   llm/                           LLM bridge interfaces and a generic client
-  node/                          Node-only transports (StdioTransport)
+  node/                          Node-only: StdioTransport, ChildProcessTransport,
+                                 StreamableHttpTransport, StreamableHttpEndpoint
 ```
+
+The split is deliberate: anything that touches `node:*` lives under `node/`, everything else is isomorphic. That is why the OAuth and protocol primitives sit at the root while the HTTP wiring that uses them does not.
 
 ## Development
 
 ```sh
 npm install
-npm run build      # tsc -b tsconfig.build.json
+npm run build      # tsup — bundles each entry point, emits .d.ts
+npm run typecheck  # tsc --noEmit, the only type gate: tsup transpiles without checking
 npm test           # vitest run
 npm run lint
 npm run lint:fix
@@ -529,6 +598,8 @@ npm run format:fix
 ```
 
 Requires Node 20.11+.
+
+`typecheck` is not redundant with `build`. tsup strips types rather than verifying them, and vitest does the same, so without it nothing would ever check the sources or the tests. It runs in CI between `build` and `test`.
 
 ## License
 

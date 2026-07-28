@@ -100,8 +100,7 @@ export interface IMcpServerOptions {
 /**
  * Fluent builder for constructing an {@link IMcpServer}.
  *
- * Call {@link withBehavior} once per behavior type you want to support.
- * After {@link build}, use {@link IMcpServer.attach} to register live object instances.
+ * Call {@link register} once per behavior type you want to support.
  *
  * @example
  * ```typescript
@@ -109,14 +108,11 @@ export interface IMcpServerOptions {
  *     .withName("my-app")
  *     .withTransport(new StdioTransport())
  *     .withInitializer(new SceneInitializer())
- *     .withBehavior(new MeshBehavior())
- *     .withBehavior(new LightBehavior())
+ *     .register(new MeshBehavior(), new LightBehavior())
  *     .withOptions({ idleTimeoutMs: 30_000 })
  *     .build();
  *
  * await server.start();
- * server.attach(heroMesh, meshBehavior);
- * server.attach(sunLight, lightBehavior);
  * ```
  */
 export interface IMcpServerBuilder {
