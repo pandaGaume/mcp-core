@@ -1,6 +1,6 @@
 {
     "name": "@cyanmycelium/mcp-core",
-    "version": "0.6.0",
+    "version": "0.7.0",
     "description": "Engine-neutral Model Context Protocol primitives: behaviors, adapters, grammars, server, transports, client and LLM bridge.",
     "type": "module",
     "license": "Apache-2.0",
