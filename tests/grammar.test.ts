@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { McpGrammar } from "../src/mcp.grammar";
 
-describe("McpGrammar — tools (legacy + modern shape)", () => {
+describe("McpGrammar, tools (legacy + modern shape)", () => {
     it("loads the legacy flat shape (tools-only)", () => {
         const g = McpGrammar.fromJSON({
             counter_increment: {
@@ -32,7 +32,7 @@ describe("McpGrammar — tools (legacy + modern shape)", () => {
     });
 });
 
-describe("McpGrammar — resources", () => {
+describe("McpGrammar, resources", () => {
     it("loads resource entries from the modern shape", () => {
         const g = McpGrammar.fromJSON({
             resources: {
@@ -59,7 +59,7 @@ describe("McpGrammar — resources", () => {
     });
 });
 
-describe("McpGrammar — resource templates", () => {
+describe("McpGrammar, resource templates", () => {
     it("loads template entries from the modern shape", () => {
         const g = McpGrammar.fromJSON({
             templates: {
@@ -80,7 +80,7 @@ describe("McpGrammar — resource templates", () => {
     });
 });
 
-describe("McpGrammar — round-trip and merge", () => {
+describe("McpGrammar, round-trip and merge", () => {
     it("toJSON emits the modern shape and round-trips via fromJSON", () => {
         const a = new McpGrammar();
         a.setToolDescription("foo", "FOO");

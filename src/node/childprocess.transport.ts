@@ -50,7 +50,7 @@ export interface IChildProcessTransportOptions {
  * one binds *this* process's `stdin`/`stdout`, for a server that was itself
  * launched by someone else; this one binds *the child's*, for the side doing
  * the launching. Together they cover both roles the specification defines for
- * stdio — which is how most MCP servers in the wild are actually run, since
+ * stdio: which is how most MCP servers in the wild are actually run, since
  * they ship as an `npx` command rather than a listening endpoint.
  *
  * ```ts
@@ -106,7 +106,7 @@ export class ChildProcessTransport implements IMessageTransport {
 
         this._proc.on("error", (error: Error) => {
             this._open = false;
-            this.onError?.(new Error(`ChildProcessTransport: cannot run "${command}" — ${error.message}`));
+            this.onError?.(new Error(`ChildProcessTransport: cannot run "${command}", ${error.message}`));
         });
 
         this._proc.on("spawn", () => {

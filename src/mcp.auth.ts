@@ -143,7 +143,7 @@ export function buildChallengeHeader(challenge: IMcpAuthChallenge): string {
 }
 
 /**
- * Parses a `WWW-Authenticate` value back into its parts — the client's half.
+ * Parses a `WWW-Authenticate` value back into its parts: the client's half.
  *
  * Returns `undefined` for a scheme other than Bearer. Unknown parameters are
  * ignored rather than rejected, since the header is extensible.

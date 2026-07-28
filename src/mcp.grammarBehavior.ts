@@ -9,7 +9,7 @@ import { McpToolResults } from "./mcp.toolResult";
 /**
  * MCP behavior that exposes grammar profile management as first-class tools.
  *
- * Extends {@link McpBehaviorBase} directly — no 3D adapter is needed because
+ * Extends {@link McpBehaviorBase} directly: no 3D adapter is needed because
  * grammar profiles are pure data, not engine objects.
  *
  * The behavior reads from and writes to a shared {@link McpGrammarStore}.
@@ -61,7 +61,7 @@ export class McpGrammarBehavior extends McpBehaviorBase {
                 description:
                     "Lists every grammar profile currently registered in the store. " +
                     "Each profile tailors how tools and their parameters are described " +
-                    "for a specific device, process, or audience — enabling an LLM to " +
+                    "for a specific device, process, or audience, enabling an LLM to " +
                     "reason about the same capability in domain-specific terms.",
                 inputSchema: {
                     type: "object",
@@ -78,7 +78,7 @@ export class McpGrammarBehavior extends McpBehaviorBase {
             {
                 name: McpGrammarBehavior.GrammarReadFn,
                 description:
-                    "Returns the full grammar profile for a given profile ID — every " +
+                    "Returns the full grammar profile for a given profile ID: every " +
                     "tool-level and property-level description override that shapes how " +
                     "an LLM perceives the device's capabilities.",
                 inputSchema: {

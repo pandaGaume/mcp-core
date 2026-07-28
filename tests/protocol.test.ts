@@ -115,7 +115,7 @@ async function rawServer(...behaviors: IMcpBehavior[]): Promise<{ peer: IMessage
 }
 
 // ---------------------------------------------------------------------------
-// Version negotiation — pure helpers
+// Version negotiation, pure helpers
 // ---------------------------------------------------------------------------
 
 describe("negotiateProtocolVersion", () => {
@@ -142,7 +142,7 @@ describe("negotiateProtocolVersion", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Server — initialize
+// Server, initialize
 // ---------------------------------------------------------------------------
 
 describe("McpServer.initialize", () => {
@@ -173,7 +173,7 @@ describe("McpServer.initialize", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Server — capabilities
+// Server, capabilities
 // ---------------------------------------------------------------------------
 
 describe("McpServer capabilities", () => {
@@ -204,7 +204,7 @@ describe("McpServer capabilities", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Server — tools/call
+// Server, tools/call
 // ---------------------------------------------------------------------------
 
 describe("McpServer.toolsCallAsync", () => {
@@ -238,7 +238,7 @@ describe("McpServer.toolsCallAsync", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Server — dispatch
+// Server, dispatch
 // ---------------------------------------------------------------------------
 
 describe("McpServer dispatch", () => {

@@ -44,7 +44,7 @@ export type McpGrammarResolver = (clientInfo: McpClientInfo, capabilities?: McpC
 /**
  * Handles the domain-level MCP initialization handshake.
  *
- * Responsible for server identity. Capabilities are intentionally excluded —
+ * Responsible for server identity. Capabilities are intentionally excluded ,
  * the server derives them automatically from all registered
  * {@link IMcpBehavior}s at handshake time. Protocol version negotiation is
  * likewise handled by the server; return

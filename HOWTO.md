@@ -14,7 +14,7 @@ A client installed on a machine can start a process on that machine, so it can l
 |---|---|---|---|
 | Claude Desktop | On the machine | stdio | Nothing but the command |
 | Claude Code | On the machine | stdio, or remote HTTP | Nothing, or a URL |
-| Codex — CLI, IDE extension, ChatGPT desktop app | On the machine | stdio, or Streamable HTTP | Nothing, or a URL |
+| Codex, CLI, IDE extension, ChatGPT desktop app | On the machine | stdio, or Streamable HTTP | Nothing, or a URL |
 | Claude.ai in a browser | On Anthropic's servers | Streamable HTTP | Public HTTPS endpoint, OAuth |
 | ChatGPT on the web, OpenAI API | On OpenAI's servers | Streamable HTTP | Public HTTPS endpoint, OAuth |
 
@@ -22,7 +22,7 @@ So both vendors give you the local route through their installed clients, and bo
 
 ---
 
-## Route 1 — installed clients, over stdio
+## Route 1: installed clients, over stdio
 
 The cheapest route by a wide margin: no deployment, no TLS, no OAuth. The server is a command, and Claude runs it.
 
@@ -90,7 +90,7 @@ Pass them through `env`, as above. This is not a workaround: the specification e
 
 ---
 
-## Route 2 — hosted clients, over HTTPS
+## Route 2: hosted clients, over HTTPS
 
 Claude.ai in a browser and ChatGPT on the web both reach a remote server, both speak Streamable HTTP, and both need a publicly reachable HTTPS URL. The installed clients can take this route too, which is what you want once one server serves several people.
 
@@ -128,7 +128,7 @@ createServer((req, res) => {
 
 ### TLS is not this package's job
 
-`StreamableHttpEndpoint` is a request handler. It opens no socket and terminates no TLS, deliberately: listening and certificates belong to your deployment. In practice the certificate comes from a reverse proxy — Caddy, nginx, a cloud load balancer — or from `node:https` if you would rather hold it yourself.
+`StreamableHttpEndpoint` is a request handler. It opens no socket and terminates no TLS, deliberately: listening and certificates belong to your deployment. In practice the certificate comes from a reverse proxy (Caddy, nginx, a cloud load balancer) or from `node:https` if you would rather hold it yourself.
 
 For development, a tunnel is the usual answer: `cloudflared tunnel` or `ngrok http 3000` gives you a public HTTPS URL pointing at your local process, which is enough to test the whole flow including OAuth.
 
@@ -136,7 +136,7 @@ For development, a tunnel is the usual answer: `cloudflared tunnel` or `ngrok ht
 
 It implements the **resource server** half, which is the half the MCP specification defines: it publishes the RFC 9728 metadata document, validates that a token was issued for this exact resource, answers `401` and `403` with the challenge a client needs to recover, and hands you the validated principal.
 
-It does **not** issue tokens. MCP defines no authorization server, so neither does this package — you point `authorizationServers` at one you already run or subscribe to, and `ITokenValidator` is where you plug in whatever verifies its tokens.
+It does **not** issue tokens. MCP defines no authorization server, so neither does this package, you point `authorizationServers` at one you already run or subscribe to, and `ITokenValidator` is where you plug in whatever verifies its tokens.
 
 That leaves one thing to check before you pick an authorization server, and it is the most common cause of a connector that never finishes connecting:
 

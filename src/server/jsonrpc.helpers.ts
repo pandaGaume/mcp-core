@@ -65,33 +65,33 @@ export function jsonRpcError(id: string | number | null, code: number, message: 
 export const Mcp = {
     // ── Errors ───────────────────────────────────────────────────────────────
 
-    /** `-32700` — request body could not be parsed as JSON. `id` is `null` per spec. */
+    /** `-32700`, request body could not be parsed as JSON. `id` is `null` per spec. */
     parseError: (): JsonRpcResponse => jsonRpcError(null, -32700, "Parse error"),
 
     /**
-     * `-32600` — the payload is valid JSON but not a valid JSON-RPC request.
+     * `-32600`: the payload is valid JSON but not a valid JSON-RPC request.
      * `id` is `null` when it could not be determined (e.g. a batch array, which
      * MCP removed in revision 2025-06-18).
      */
     invalidRequest: (id: string | number | null, message: string): JsonRpcResponse => jsonRpcError(id, -32600, message),
 
-    /** `-32601` — the requested method does not exist on this server. */
+    /** `-32601`: the requested method does not exist on this server. */
     methodNotFound: (id: string | number, method: string): JsonRpcResponse => jsonRpcError(id, -32601, `Method not found: ${method}`),
 
-    /** `-32602` — required parameters are missing or malformed. */
+    /** `-32602`, required parameters are missing or malformed. */
     invalidParams: (id: string | number, message: string): JsonRpcResponse => jsonRpcError(id, -32602, message),
 
-    /** `-32603` — an unexpected error occurred while processing the request. */
+    /** `-32603`: an unexpected error occurred while processing the request. */
     internalError: (id: string | number, message: string): JsonRpcResponse => jsonRpcError(id, -32603, message),
 
-    /** `-32002` — no resource matched the given URI. */
+    /** `-32002`: no resource matched the given URI. */
     resourceNotFound: (id: string | number, uri: string): JsonRpcResponse => jsonRpcError(id, -32002, `Resource not found: ${uri}`),
 
-    /** `-32002` — no attached behavior instance matched the given URI. */
+    /** `-32002`: no attached behavior instance matched the given URI. */
     instanceNotFound: (id: string | number, uri: string): JsonRpcResponse => jsonRpcError(id, -32002, `Instance not found: ${uri}`),
 
     /**
-     * `-32602` — no tool matched the given name.
+     * `-32602`: no tool matched the given name.
      *
      * The MCP spec classifies an unknown tool as a protocol error and its
      * reference example uses `-32602` (invalid params), not `-32601`: the
@@ -103,7 +103,7 @@ export const Mcp = {
     // ── Results ──────────────────────────────────────────────────────────────
 
     /**
-     * Wraps a `ping` result. The spec requires an empty result object — the
+     * Wraps a `ping` result. The spec requires an empty result object: the
      * receiver of a ping MUST answer promptly so the sender can tell a live
      * connection from a stale one.
      */

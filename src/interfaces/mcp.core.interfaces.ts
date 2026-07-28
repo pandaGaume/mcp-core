@@ -413,7 +413,7 @@ export interface McpServerCapabilities {
 
 /**
  * The domain-level result produced by {@link IMcpInitializer}.
- * Contains only the server-supplied parts of the handshake — protocol version,
+ * Contains only the server-supplied parts of the handshake, protocol version,
  * identity, and optional instructions. Capabilities are intentionally excluded
  * here because they are derived automatically from registered behaviors at
  * runtime by the server.
@@ -425,7 +425,7 @@ export interface McpServerIdentity {
      * Pins the MCP protocol revision the server will answer with, bypassing
      * negotiation.
      *
-     * Leave it undefined — the recommended form — and the server negotiates
+     * Leave it undefined (the recommended form) and the server negotiates
      * against the revisions it supports: it echoes the revision the client
      * requested when it can honour it, and falls back to its newest otherwise.
      *

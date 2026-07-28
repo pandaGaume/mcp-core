@@ -51,7 +51,7 @@ export type McpGrammarTemplateEntry = {
  *
  * Two shapes are accepted by {@link McpGrammar.fromJSON}:
  *
- * 1. **Modern (recommended)** — top-level keyed by category:
+ * 1. **Modern (recommended)**, top-level keyed by category:
  * ```json
  * {
  *     "tools":      { "tool_a": { "description": "...", "properties": { "x": "..." } } },
@@ -60,7 +60,7 @@ export type McpGrammarTemplateEntry = {
  * }
  * ```
  *
- * 2. **Legacy (still accepted, tools-only)** — top-level keyed by tool name,
+ * 2. **Legacy (still accepted, tools-only)**, top-level keyed by tool name,
  *    with no `tools`/`resources`/`templates` wrappers. This was the v0.1
  *    shape; new code should prefer the modern shape.
  *
@@ -241,7 +241,7 @@ export class McpGrammar {
     /**
      * Creates a new grammar by overlaying entries from left to right.
      * Later grammars win. `undefined` entries in a later grammar do NOT erase
-     * entries from earlier grammars — only explicit strings override.
+     * entries from earlier grammars, only explicit strings override.
      */
     static merge(...grammars: (McpGrammar | undefined)[]): McpGrammar {
         const result = new McpGrammar();

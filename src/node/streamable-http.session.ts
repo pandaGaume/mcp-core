@@ -18,7 +18,7 @@ type Sink = { type: "post"; res: ServerResponse } | { type: "stream" };
  *
  * The correlation problem it solves: `send()` hands over a serialized frame and
  * nothing else, so the transport alone must work out which HTTP exchange that
- * frame answers. It does so by JSON-RPC id — a response whose id matches a
+ * frame answers. It does so by JSON-RPC id: a response whose id matches a
  * request delivered by a POST is written back on that POST, everything else is
  * server-initiated and goes to the GET stream.
  */

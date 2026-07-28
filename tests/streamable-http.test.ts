@@ -5,7 +5,7 @@ import { McpClient } from "../src/client/mcp.client";
 import { StreamableHttpTransport } from "../src/node/streamable-http.transport";
 
 // ---------------------------------------------------------------------------
-// Test harness — a real HTTP server so the transport exercises real sockets
+// Test harness: a real HTTP server so the transport exercises real sockets
 // ---------------------------------------------------------------------------
 
 interface RecordedRequest {

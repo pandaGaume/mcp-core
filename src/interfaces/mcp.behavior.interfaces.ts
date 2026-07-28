@@ -8,9 +8,9 @@ import { McpAnnotations, McpBaseMetadata, McpIcon, McpMeta, McpResource, McpReso
  * Declares how well an adapter supports a particular tool.
  *
  * Used at two levels:
- * - **Design-time** — the behavior's `getTools()` filters out `Planned` / `None`
+ * - **Design-time**: the behavior's `getTools()` filters out `Planned` / `None`
  *   tools so they are never advertised to MCP clients.
- * - **Runtime** — `executeToolAsync` can query per-resource-type support to
+ * - **Runtime**, `executeToolAsync` can query per-resource-type support to
  *   return descriptive errors (e.g. "orbit is not supported on GeodeticCamera").
  */
 export enum ToolSupport {
@@ -18,9 +18,9 @@ export enum ToolSupport {
     Full = "full",
     /** The adapter implements the tool but with limitations (documented in JSDoc). */
     Partial = "partial",
-    /** The tool is recognised but not yet implemented — hidden from clients. */
+    /** The tool is recognised but not yet implemented, hidden from clients. */
     Planned = "planned",
-    /** The adapter does not and will not support this tool — hidden from clients. */
+    /** The adapter does not and will not support this tool, hidden from clients. */
     None = "none",
 }
 
@@ -99,7 +99,7 @@ export type McpToolResultContent = McpTextContent | McpImageContent | McpAudioCo
 /**
  * Shared runtime contract for both behaviors and adapters.
  *
- * This interface represents operations that require a live object to execute —
+ * This interface represents operations that require a live object to execute ,
  * reading the current state of a resource, and executing a tool against it.
  *
  * Both {@link IMcpBehaviorAdapter} and {@link IMcpBehavior} extend this contract:
@@ -128,11 +128,11 @@ export interface IMcpRuntimeOperations {
 }
 
 /**
- * Operations knowable at design time — pure schema, no live object required.
+ * Operations knowable at design time, pure schema, no live object required.
  */
 export interface IMcpDesignOperations {
     /**
-     * The behavior's own resource identity — who it is in the MCP resource list.
+     * The behavior's own resource identity: who it is in the MCP resource list.
      * This is static metadata describing the behavior category itself,
      * NOT an enumeration of backed objects.
      *
@@ -148,14 +148,14 @@ export interface IMcpDesignOperations {
     getResourceTemplates(): McpResourceTemplate[];
 
     /**
-     * Tool schemas — static definitions, execution handled at runtime.
+     * Tool schemas, static definitions, execution handled at runtime.
      */
     getTools(): McpTool[];
 }
 
 /**
- * Adapter — only layer touching BJS/data source directly.
- * Purely runtime — no identity, no schema.
+ * Adapter, only layer touching BJS/data source directly.
+ * Purely runtime: no identity, no schema.
  */
 export interface IMcpBehaviorAdapter extends IMcpRuntimeOperations {
     onResourceContentChanged: IEventSource<string>;
@@ -210,7 +210,7 @@ export interface IMcpBehaviorAdapter extends IMcpRuntimeOperations {
  * - The tool schemas (capabilities)
  * - Runtime delegation to its adapter (data + mutations)
  *
- * A behavior is decoupled from any specific object instance — it may represent
+ * A behavior is decoupled from any specific object instance: it may represent
  * a single light, all lights in a scene, or lights from a remote repository.
  * That cardinality is entirely determined by the injected {@link IMcpBehaviorAdapter}.
  *

@@ -20,7 +20,7 @@ import { HttpSessionTransport } from "./streamable-http.session";
  * Deliberately narrower than {@link IMcpServer}: the endpoint runs the HTTP and
  * session state machine and needs nothing beyond a way to start and stop the
  * thing on the other end of the transport. An `IMcpServer` satisfies it, and so
- * does a relay that forwards the session's frames somewhere else entirely —
+ * does a relay that forwards the session's frames somewhere else entirely ,
  * which is what lets a broker reuse this class instead of reimplementing it.
  */
 export interface IMcpSessionHandle {
@@ -127,7 +127,7 @@ interface ISession {
  * The server half of the MCP Streamable HTTP transport, as a request handler.
  *
  * It deliberately opens no socket. You mount {@link handleRequest} on whatever
- * already serves HTTP — `node:http`, Express, Fastify — because listening,
+ * already serves HTTP (`node:http`, Express, Fastify) because listening,
  * TLS and routing are your application's business, while sessions, framing and
  * the protocol's status codes are the ones nobody should have to reimplement.
  *
@@ -160,7 +160,7 @@ export class StreamableHttpEndpoint {
      * The Protected Resource Metadata document for this endpoint, or
      * `undefined` when it is not protected.
      *
-     * Serve it yourself at {@link IStreamableHttpAuthOptions.metadataUrl} —
+     * Serve it yourself at {@link IStreamableHttpAuthOptions.metadataUrl} ,
      * routing stays with your application, and the document must be reachable
      * **unauthenticated**, since a client fetches it precisely because it has no
      * token yet.

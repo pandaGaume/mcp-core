@@ -1,14 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { McpToolResults } from "../src/mcp.toolResult";
 
-describe("McpToolResults.json — structured content (MCP 2025-06-18)", () => {
+describe("McpToolResults.json, structured content (MCP 2025-06-18)", () => {
     it("emits a plain object both as a JSON text block and as structuredContent", () => {
         const data = { count: 2, providers: ["a", "b"] };
         const result = McpToolResults.json(data);
 
         // Backward-compatible text block.
         expect(result.content).toEqual([{ type: "text", text: JSON.stringify(data) }]);
-        // Structured payload — the same object, not re-parsed.
+        // Structured payload: the same object, not re-parsed.
         expect(result.structuredContent).toEqual(data);
     });
 

@@ -11,7 +11,7 @@ export interface IStreamableHttpTransportOptions {
     /**
      * Extra headers sent with every HTTP request.
      *
-     * Pass a function when a value changes over the life of the connection —
+     * Pass a function when a value changes over the life of the connection ,
      * a bearer token being the obvious case. It is read fresh for each request,
      * so a rotated credential takes effect immediately, where a plain object
      * would force the caller to rebuild the transport and lose the MCP session
@@ -27,7 +27,7 @@ export interface IStreamableHttpTransportOptions {
      * MCP protocol revision advertised in the `MCP-Protocol-Version` header.
      *
      * The spec wants the revision negotiated during initialization, which is
-     * only known once the handshake completes — prefer
+     * only known once the handshake completes, prefer
      * {@link StreamableHttpTransport.setProtocolVersion}, which an MCP client
      * calls automatically. Set this only to force a value from the start.
      */
@@ -158,7 +158,7 @@ function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
  * Server-Sent Events. When the server creates an MCP session, the transport
  * retains its `Mcp-Session-Id`; it also opens the standalone GET stream used
  * for server-initiated messages, re-establishing it with `Last-Event-ID` when
- * the server closes the connection — which the spec explicitly allows a server
+ * the server closes the connection: which the spec explicitly allows a server
  * to do at any time.
  *
  * A session the server has terminated (HTTP 404) surfaces as a transport close,
@@ -288,7 +288,7 @@ export class StreamableHttpTransport implements IMessageTransport {
      * until the headers arrive: an SSE response is long-lived, and dropping it
      * early would leave `close()` with nothing to abort. Both the request and
      * the response carry an `error` listener, since an unhandled `error` event
-     * on a Node stream is thrown rather than reported — and a broken connection
+     * on a Node stream is thrown rather than reported: and a broken connection
      * is routine on a long-lived stream.
      *
      * @param onFailure - Replaces the default {@link onError} reporting, so a
@@ -385,7 +385,7 @@ export class StreamableHttpTransport implements IMessageTransport {
         try {
             parsed = JSON.parse(body);
         } catch {
-            // Not JSON at all — a proxy error page, say. Forwarding it would let
+            // Not JSON at all: a proxy error page, say. Forwarding it would let
             // the JSON-RPC layer drop it silently and the caller wait out its
             // timeout, so report it and settle the pending request instead.
             this._reportHttpFailure(200, body, requestId);
@@ -405,7 +405,7 @@ export class StreamableHttpTransport implements IMessageTransport {
      * When the POST carried a JSON-RPC request, the failure is delivered as a
      * JSON-RPC error response for that id, so the pending call rejects at once
      * instead of waiting out its timeout. A server MAY answer with a JSON-RPC
-     * error response of its own — that one is forwarded as-is, with the id
+     * error response of its own: that one is forwarded as-is, with the id
      * filled in when the server left it out. Failures that belong to no request
      * (a notification, a response) are reported through {@link onError}.
      */
@@ -578,7 +578,7 @@ export class StreamableHttpTransport implements IMessageTransport {
 
         const request = makeRequest(this._url, { method: "DELETE", headers: this._requestHeaders({}) }, (response) => response.resume());
         request.on("error", () => {
-            /* best effort — the session expires on its own anyway */
+            /* best effort: the session expires on its own anyway */
         });
         // Do not let a slow teardown hold the process open.
         request.on("socket", (socket: Socket) => socket.unref());

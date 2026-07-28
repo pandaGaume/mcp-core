@@ -38,7 +38,7 @@ export function isProtocolVersionSupported(version: string | undefined, supporte
  * - If the server supports the revision the client requested, it MUST answer
  *   with that same revision.
  * - Otherwise it MUST answer with another revision it supports, and that
- *   SHOULD be the latest one — hence `supported[0]`.
+ *   SHOULD be the latest one, hence `supported[0]`.
  *
  * A missing or malformed request version is treated as "unsupported", so the
  * caller still receives a usable revision instead of echoing `undefined`.
@@ -49,10 +49,10 @@ export function isProtocolVersionSupported(version: string | undefined, supporte
  *
  * @example
  * ```typescript
- * negotiateProtocolVersion("2025-06-18");            // "2025-06-18" — honoured
- * negotiateProtocolVersion("1999-01-01");            // "2025-11-25" — latest fallback
- * negotiateProtocolVersion(undefined);               // "2025-11-25" — latest fallback
- * negotiateProtocolVersion("2025-11-25", ["2024-11-05"]); // "2024-11-05" — narrowed server
+ * negotiateProtocolVersion("2025-06-18");            // "2025-06-18", honoured
+ * negotiateProtocolVersion("1999-01-01");            // "2025-11-25", latest fallback
+ * negotiateProtocolVersion(undefined);               // "2025-11-25", latest fallback
+ * negotiateProtocolVersion("2025-11-25", ["2024-11-05"]); // "2024-11-05", narrowed server
  * ```
  */
 export function negotiateProtocolVersion(requested: string | undefined, supported: readonly string[] = MCP_SUPPORTED_PROTOCOL_VERSIONS): string {

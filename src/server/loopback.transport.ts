@@ -1,7 +1,7 @@
 import type { IMessageTransport } from "../interfaces";
 
 // ---------------------------------------------------------------------------
-// LoopbackEnd — one side of a loopback pair (internal)
+// LoopbackEnd: one side of a loopback pair (internal)
 // ---------------------------------------------------------------------------
 
 /**
@@ -66,14 +66,14 @@ class LoopbackEnd implements IMessageTransport {
 }
 
 // ---------------------------------------------------------------------------
-// LoopbackTransport — factory for in-process transport pairs
+// LoopbackTransport, factory for in-process transport pairs
 // ---------------------------------------------------------------------------
 
 /**
  * Creates a pair of in-process transports connected back-to-back.
  *
  * Messages sent on one end are delivered to the other's `onMessage` callback
- * without any network overhead — ideal for same-page server↔client
+ * without any network overhead, ideal for same-page server↔client
  * communication.
  *
  * @example

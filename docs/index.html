@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>@cyanmycelium/mcp-core — Engine-neutral primitives for MCP servers</title>
+  <title>@cyanmycelium/mcp-core · Engine-neutral primitives for MCP servers</title>
   <meta name="description" content="Engine-neutral primitives for building Model Context Protocol servers and clients in TypeScript." />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -77,7 +77,7 @@
 <!-- ============================ WHY THIS PACKAGE ======================= -->
 <section id="why">
   <div class="shell">
-    <div class="section-num">01 — Motivation</div>
+    <div class="section-num">01 · Motivation</div>
     <h2>The official SDK is not enough when…</h2>
 
     <ol class="why">
@@ -86,8 +86,8 @@
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="4" cy="8" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="12" cy="12" r="2"/><path d="M6 8h4M6 8l4-4M6 8l4 4"/></svg>
         </span>
         <span class="why-body">
-          <b>Multiple LLM clients need different tool descriptions on the same server</b>
-          — Claude wants concise, an internal tool prefers verbose.
+          <b>Multiple LLM clients need different tool descriptions on the same server</b>,
+          Claude wants concise, an internal tool prefers verbose.
         </span>
       </li>
       <li>
@@ -96,7 +96,7 @@
         </span>
         <span class="why-body">
           <b>The set of live resources changes while sessions are open</b>
-          — objects added, renamed, removed — and the agent must be notified.
+          (objects added, renamed, removed) and the agent must be notified.
         </span>
       </li>
       <li>
@@ -104,8 +104,8 @@
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
         </span>
         <span class="why-body">
-          <b>The same tool catalog must run against different backends</b>
-          — a 3D engine, a geo viewer, a node graph, a test mock.
+          <b>The same tool catalog must run against different backends</b>:
+          a 3D engine, a geo viewer, a node graph, a test mock.
         </span>
       </li>
       <li>
@@ -113,8 +113,8 @@
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><path d="M4 4l8 8"/></svg>
         </span>
         <span class="why-body">
-          <b>A tool exists conceptually but is not supported on this instance</b>
-          — you want the client to never see it instead of getting an error.
+          <b>A tool exists conceptually but is not supported on this instance</b>,
+          you want the client to never see it instead of getting an error.
         </span>
       </li>
       <li>
@@ -122,8 +122,8 @@
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 13V5a1 1 0 0 1 1-1h6l3 3v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M6 8h4M6 11h4"/></svg>
         </span>
         <span class="why-body">
-          <b>Agents need to rewrite their own tool descriptions mid-session</b>
-          — and persist that across reconnects.
+          <b>Agents need to rewrite their own tool descriptions mid-session</b>,
+          and persist that across reconnects.
         </span>
       </li>
     </ol>
@@ -140,7 +140,7 @@
 <!-- =========================== THE FOUR-LAYER STACK ==================== -->
 <section id="stack">
   <div class="shell">
-    <div class="section-num">02 — Architecture</div>
+    <div class="section-num">02 · Architecture</div>
     <h2>Four layers, each independently testable</h2>
 
     <div class="stack" role="img" aria-label="Four-layer stack: Grammar over Behavior over Adapter over State">
@@ -161,7 +161,7 @@
           <span class="stack-layer-idx">03</span>
           <span class="stack-layer-name">BEHAVIOR</span>
         </div>
-        <div class="stack-layer-body">Identity, namespace, tool / resource schemas — the MCP-side contract.</div>
+        <div class="stack-layer-body">Identity, namespace, tool / resource schemas: the MCP-side contract.</div>
       </div>
       <div class="stack-arrow" aria-hidden="true">
         <svg width="14" height="22" viewBox="0 0 14 22"><path d="M7 0v18M2 14l5 5 5-5" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -172,7 +172,7 @@
           <span class="stack-layer-idx">02</span>
           <span class="stack-layer-name">ADAPTER</span>
         </div>
-        <div class="stack-layer-body">Runtime — executes against the actual host objects, emits change events.</div>
+        <div class="stack-layer-body">Runtime, executes against the actual host objects, emits change events.</div>
       </div>
       <div class="stack-arrow" aria-hidden="true">
         <svg width="14" height="22" viewBox="0 0 14 22"><path d="M7 0v18M2 14l5 5 5-5" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -227,7 +227,7 @@
 <!-- ============================== WHAT YOU GET ========================= -->
 <section id="get">
   <div class="shell">
-    <div class="section-num">03 — Comparison</div>
+    <div class="section-num">03 · Comparison</div>
     <h2>What you get over a flat <code class="inline">{tool, schema, handler}</code> setup</h2>
 
     <div class="table-wrap">
@@ -284,7 +284,7 @@
 <!-- ============================ QUICK START ============================ -->
 <section id="quick-start">
   <div class="shell">
-    <div class="section-num">04 — Quick start</div>
+    <div class="section-num">04 · Quick start</div>
     <h2>A minimal MCP server in four steps</h2>
 
     <p class="intro">A behavior owns the schemas, an adapter owns the execution. The server wires them together with a transport.</p>
@@ -294,12 +294,12 @@
         <span class="lang">TypeScript · server.ts</span>
         <button class="copy-btn" data-copy-block>Copy</button>
       </div>
-<pre class="scroll-y"><code><span class="tk-c">// 1. State — a serializable snapshot of what the client can read.</span>
+<pre class="scroll-y"><code><span class="tk-c">// 1. State: a serializable snapshot of what the client can read.</span>
 <span class="tk-k">interface</span> <span class="tk-t">CounterState</span> <span class="tk-pu">{</span>
   <span class="tk-p">value</span><span class="tk-pu">:</span> <span class="tk-t">number</span>
 <span class="tk-pu">}</span>
 
-<span class="tk-c">// 2. Adapter — binds the behavior to a real backend.</span>
+<span class="tk-c">// 2. Adapter, binds the behavior to a real backend.</span>
 <span class="tk-k">class</span> <span class="tk-t">CounterAdapter</span> <span class="tk-k">extends</span> <span class="tk-t">McpAdapterBase</span><span class="tk-pu">&lt;</span><span class="tk-t">CounterState</span><span class="tk-pu">&gt; {</span>
   <span class="tk-k">private</span> <span class="tk-p">state</span><span class="tk-pu">:</span> <span class="tk-t">CounterState</span> <span class="tk-pu">= {</span> <span class="tk-p">value</span><span class="tk-pu">:</span> <span class="tk-n">0</span> <span class="tk-pu">}</span>
 
@@ -320,7 +320,7 @@
   <span class="tk-pu">}</span>
 <span class="tk-pu">}</span>
 
-<span class="tk-c">// 3. Behavior — declares the MCP-side contract.</span>
+<span class="tk-c">// 3. Behavior, declares the MCP-side contract.</span>
 <span class="tk-k">class</span> <span class="tk-t">CounterBehavior</span> <span class="tk-k">extends</span> <span class="tk-t">McpBehavior</span><span class="tk-pu">&lt;</span><span class="tk-t">CounterState</span><span class="tk-pu">, </span><span class="tk-t">CounterAdapter</span><span class="tk-pu">&gt; {</span>
   <span class="tk-p">namespace</span> <span class="tk-pu">=</span> <span class="tk-s">'counter'</span>
   <span class="tk-p">uriTemplate</span> <span class="tk-pu">=</span> <span class="tk-s">'app://counter'</span>
@@ -363,7 +363,7 @@
 <!-- ============================ GRAMMAR LAYER ========================== -->
 <section id="grammar">
   <div class="shell">
-    <div class="section-num">05 — Grammar</div>
+    <div class="section-num">05 · Grammar</div>
     <h2>Per-client tool descriptions, no conditional code</h2>
 
     <p class="intro">A grammar is a set of description overrides that the server applies on top of the behavior&rsquo;s baseline schemas before sending them to the client.</p>
@@ -440,7 +440,7 @@
 <!-- =========================== PER-RESOURCE SUPPORT ==================== -->
 <section id="support">
   <div class="shell">
-    <div class="section-num">06 — Capability filtering</div>
+    <div class="section-num">06 · Capability filtering</div>
     <h2>Advertise only what a resource can actually do</h2>
 
     <p class="intro">The adapter declares which tools apply to which resource types. The behavior filters tools accordingly before advertising them.</p>
@@ -482,7 +482,7 @@
 <!-- ======================== ONE BEHAVIOR / MANY ADAPTERS =============== -->
 <section id="adapters">
   <div class="shell">
-    <div class="section-num">07 — Portability</div>
+    <div class="section-num">07 · Portability</div>
     <h2>Write the schema once, run it everywhere</h2>
 
     <p class="intro">The behavior owns the schemas. The adapter owns the execution. Any adapter that satisfies the contract can be paired with the same behavior.</p>
@@ -533,7 +533,7 @@
 <!-- ============================ TRANSPORTS ============================= -->
 <section id="transports">
   <div class="shell">
-    <div class="section-num">08 — Transports</div>
+    <div class="section-num">08 · Transports</div>
     <h2>Transports</h2>
 
     <div class="table-wrap">
@@ -584,7 +584,7 @@
 <!-- =========================== SUBPATH EXPORTS ========================= -->
 <section id="subpaths">
   <div class="shell">
-    <div class="section-num">09 — Bundling</div>
+    <div class="section-num">09 · Bundling</div>
     <h2>Tree-shakeable subpath exports</h2>
 
     <div class="code-wrap">
@@ -608,7 +608,7 @@
 <!-- =============================== INSTALL ============================= -->
 <section id="install">
   <div class="shell">
-    <div class="section-num">10 — Install</div>
+    <div class="section-num">10 · Install</div>
     <h2>Install</h2>
 
     <div class="code-wrap">

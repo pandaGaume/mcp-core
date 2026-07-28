@@ -32,7 +32,7 @@ export interface JsonRpcRequest {
 
 /**
  * Represents a JSON-RPC 2.0 response object returned by the server.
- * Contains either a `result` on success or an `error` on failure — never both.
+ * Contains either a `result` on success or an `error` on failure, never both.
  *
  * @see {@link https://www.jsonrpc.org/specification#response_object JSON-RPC 2.0 Specification}
  *
@@ -60,7 +60,7 @@ export interface JsonRpcResponse {
 }
 
 /**
- * Represents a JSON-RPC 2.0 notification — a request with no expected response.
+ * Represents a JSON-RPC 2.0 notification: a request with no expected response.
  * Notifications do not carry an `id` field, so the server must not reply.
  *
  * @see {@link https://www.jsonrpc.org/specification#notification JSON-RPC 2.0 Specification}
@@ -89,11 +89,11 @@ export interface JsonRpcNotification {
  * Represents a JSON-RPC 2.0 error object included in a failed {@link JsonRpcResponse}.
  *
  * Standard error codes:
- * - `-32700` — Parse error
- * - `-32600` — Invalid Request
- * - `-32601` — Method not found
- * - `-32602` — Invalid params
- * - `-32603` — Internal error
+ * - `-32700`, Parse error
+ * - `-32600`, Invalid Request
+ * - `-32601`, Method not found
+ * - `-32602`, Invalid params
+ * - `-32603`, Internal error
  *
  * @see {@link https://www.jsonrpc.org/specification#error_object JSON-RPC 2.0 Specification}
  */

@@ -7,7 +7,7 @@ import type { McpResource, McpResourceContent, McpResourceTemplate, McpTool, Mcp
 // ---------------------------------------------------------------------------
 
 /**
- * Stub adapter that declares no resources, no tools — just enough surface
+ * Stub adapter that declares no resources, no tools, just enough surface
  * for `McpBehavior` to instantiate. Optionally ships an adapter-side
  * grammar override for a specific key.
  */
@@ -168,7 +168,7 @@ describe("Behavior-owned grammar layer", () => {
 // Four-layer merge end-to-end
 // ---------------------------------------------------------------------------
 
-describe("McpServer.initialize — four-layer grammar merge", () => {
+describe("McpServer.initialize, four-layer grammar merge", () => {
     it("picks the behavior's grammar when no other layer matches", () => {
         const fr = McpGrammar.fromJSON({
             tools: { ping: { description: "FR baseline", properties: { msg: "FR msg" } } },
@@ -240,7 +240,7 @@ describe("McpServer.initialize — four-layer grammar merge", () => {
 // Candidate chain selection
 // ---------------------------------------------------------------------------
 
-describe("McpServer.initialize — candidate chain selection", () => {
+describe("McpServer.initialize, candidate chain selection", () => {
     it("picks the first candidate that has at least one layer registered", () => {
         const fr = McpGrammar.fromJSON({ tools: { ping: { description: "behavior FR" } } });
         const behavior = new TestBehavior(new StubAdapter("test"), new Map([["default:fr", fr]]));
@@ -277,7 +277,7 @@ describe("McpServer.initialize — candidate chain selection", () => {
 // Hot-reload via onGrammarsChanged
 // ---------------------------------------------------------------------------
 
-describe("McpServer — behavior onGrammarsChanged", () => {
+describe("McpServer, behavior onGrammarsChanged", () => {
     it("re-merges the session grammar when the behavior invalidates", () => {
         const fr = McpGrammar.fromJSON({ tools: { ping: { description: "v1" } } });
         const behavior = new TestBehavior(new StubAdapter("test"), new Map([["default:fr", fr]]));

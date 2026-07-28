@@ -156,8 +156,8 @@ export class McpClient implements IMcpClient {
                     .catch(reject);
             };
 
-            // Open the transport. `connect()` is not part of IMessageTransport —
-            // some transports are handed over already open — so probe for it
+            // Open the transport. `connect()` is not part of IMessageTransport ,
+            // some transports are handed over already open: so probe for it
             // rather than testing for a specific class.
             if ("connect" in this._transport && typeof (this._transport as { connect: unknown }).connect === "function") {
                 (this._transport as { connect(): void }).connect();
@@ -271,7 +271,7 @@ export class McpClient implements IMcpClient {
         try {
             msg = JSON.parse(data);
         } catch {
-            return; // malformed — drop silently
+            return; // malformed, drop silently
         }
 
         // Request from the server: it carries both an id and a method, and it

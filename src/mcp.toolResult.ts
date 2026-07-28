@@ -3,7 +3,7 @@ import { McpResourceContent, McpToolResult } from "./interfaces";
 /**
  * Factory helpers for constructing {@link McpToolResult} responses.
  *
- * Keeps tool implementations clean — return a result without manually
+ * Keeps tool implementations clean, return a result without manually
  * building the content array each time.
  *
  * @example
@@ -20,7 +20,7 @@ export const McpToolResults = {
     text: (text: string): McpToolResult => ({ content: [{ type: "text", text }] }),
 
     /**
-     * Serialized JSON — convenience over `text(JSON.stringify(...))`.
+     * Serialized JSON, convenience over `text(JSON.stringify(...))`.
      *
      * Emits the payload as a JSON `text` block (backward-compatible) and, when
      * `data` is a plain object, also as `structuredContent` (MCP 2025-06-18) so
@@ -36,7 +36,7 @@ export const McpToolResults = {
         return result;
     },
 
-    /** Embeds an updated resource inline — avoids a round-trip `resources/read`. */
+    /** Embeds an updated resource inline, avoids a round-trip `resources/read`. */
     resource: (resource: McpResourceContent): McpToolResult => ({ content: [{ type: "resource", resource }] }),
 
     /**
@@ -56,7 +56,7 @@ export const McpToolResults = {
     audio: (data: string, mimeType: string): McpToolResult => ({ content: [{ type: "audio", data, mimeType }] }),
 
     /**
-     * Tool-level error — `isError: true` signals failure to the client without throwing.
+     * Tool-level error, `isError: true` signals failure to the client without throwing.
      *
      * This is the form the spec wants for execution and input-validation
      * failures: unlike a JSON-RPC error, it reaches the model, which can read

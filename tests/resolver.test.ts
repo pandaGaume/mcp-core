@@ -21,7 +21,7 @@ function call(opts: GrammarResolverOptions, clientName: string, capabilities?: R
 // Agent matching
 // ---------------------------------------------------------------------------
 
-describe("grammarResolverFromOptions — agent matching", () => {
+describe("grammarResolverFromOptions, agent matching", () => {
     const opts = withDefaults({ localeSource: () => "en" });
 
     it("matches claude clients via substring", () => {
@@ -60,7 +60,7 @@ describe("grammarResolverFromOptions — agent matching", () => {
 // Locale narrowing
 // ---------------------------------------------------------------------------
 
-describe("grammarResolverFromOptions — locale narrowing", () => {
+describe("grammarResolverFromOptions, locale narrowing", () => {
     it("emits region then bare language then en fallback", () => {
         const chain = call({ localeSource: () => "fr-CA" }, "Claude");
         // Most-specific first, then progressively dropped.
@@ -94,7 +94,7 @@ describe("grammarResolverFromOptions — locale narrowing", () => {
 // Version dimension (opt-in)
 // ---------------------------------------------------------------------------
 
-describe("grammarResolverFromOptions — versioning (opt-in)", () => {
+describe("grammarResolverFromOptions, versioning (opt-in)", () => {
     it("never includes a @version segment when versionFrom is absent", () => {
         const chain = call({ localeSource: () => "fr" }, "Claude");
         expect(chain.every((k) => !k.includes("@"))).toBe(true);
@@ -142,7 +142,7 @@ describe("grammarResolverFromOptions — versioning (opt-in)", () => {
 // composeKey customization + dedup
 // ---------------------------------------------------------------------------
 
-describe("grammarResolverFromOptions — composeKey + dedup", () => {
+describe("grammarResolverFromOptions, composeKey + dedup", () => {
     it("uses a custom composeKey when provided", () => {
         const chain = call(
             {

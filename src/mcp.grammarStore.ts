@@ -34,7 +34,7 @@ export class McpGrammarStore {
 
     // ── Read ────────────────────────────────────────────────────────────────
 
-    /** Subscribable event source — fires after every `set`, `delete`, `importAll`, or `clear`. */
+    /** Subscribable event source, fires after every `set`, `delete`, `importAll`, or `clear`. */
     get onChanged(): IEventSource<McpGrammarStoreChangeEvent> {
         return this._onChanged;
     }

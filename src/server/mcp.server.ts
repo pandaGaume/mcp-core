@@ -23,7 +23,7 @@ import { Mcp } from "./jsonrpc.helpers";
  *
  * Routes incoming JSON-RPC messages from its transport to the appropriate MCP
  * handler. Also implements {@link IMcpServerHandlers} so it can act as its own
- * default handler — or delegate to a custom one supplied via the builder's
+ * default handler: or delegate to a custom one supplied via the builder's
  * `withHandlers()`.
  *
  * The transport is always supplied by the caller: the server owns the protocol,
@@ -51,8 +51,8 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     /**
      * The transport this server speaks through, supplied at construction.
      *
-     * Optional so the class can be used as a pure request handler — calling
-     * `initialize()`, `toolsList()` and friends directly — without a connection.
+     * Optional so the class can be used as a pure request handler, calling
+     * `initialize()`, `toolsList()` and friends directly, without a connection.
      * {@link start} is what requires one.
      */
     private readonly _providedTransport: IMessageTransport | undefined;
@@ -142,7 +142,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     }
 
     // -------------------------------------------------------------------------
-    // IMcpServer — identity & state
+    // IMcpServer, identity & state
     // -------------------------------------------------------------------------
 
     get name(): string {
@@ -166,7 +166,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     }
 
     // -------------------------------------------------------------------------
-    // IMcpServer — lifecycle
+    // IMcpServer, lifecycle
     // -------------------------------------------------------------------------
 
     /**
@@ -178,7 +178,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      */
     start(): Promise<void> {
         if (!this._providedTransport) {
-            return Promise.reject(new Error("McpServer: no transport was provided — pass one to the constructor or use McpServerBuilder.withTransport()"));
+            return Promise.reject(new Error("McpServer: no transport was provided, pass one to the constructor or use McpServerBuilder.withTransport()"));
         }
         return this._connect(this._providedTransport);
     }
@@ -199,7 +199,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     }
 
     // -------------------------------------------------------------------------
-    // IMcpServer — behavior & instance management
+    // IMcpServer, behavior & instance management
     // -------------------------------------------------------------------------
 
     register(...behavior: IMcpBehavior[]): IMcpServer {
@@ -237,7 +237,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     }
 
     // -------------------------------------------------------------------------
-    // IMcpServerHandlers — default MCP method implementations
+    // IMcpServerHandlers, default MCP method implementations
     // -------------------------------------------------------------------------
 
     /**
@@ -428,7 +428,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         const uri = args["uri"] as string | undefined;
 
         if (uri) {
-            // Fast path: URI provided — route directly to the matching resource.
+            // Fast path: URI provided, route directly to the matching resource.
             const r = this._resourceIndex.get(uri) ?? this._matchTemplate(uri);
             if (!r) return Mcp.instanceNotFound(req.id, uri);
             return this._callTool(req, r, uri, name, args);
@@ -503,7 +503,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
 
     /**
      * Applies a grammar layer on top of tool schemas returned by behaviours.
-     * Returns new tool objects — the originals (which may be cached) are never mutated.
+     * Returns new tool objects: the originals (which may be cached) are never mutated.
      *
      * For each tool the grammar may override:
      * - The tool-level `title` and `description`
@@ -589,7 +589,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
             transport.onError = (error: Error) => {
                 // Only reject the initial promise; subsequent errors are handled via onClose.
                 if (!this._isRunning) {
-                    reject(new Error(`McpServer: transport failed to open — ${error.message}`));
+                    reject(new Error(`McpServer: transport failed to open, ${error.message}`));
                 }
             };
 
@@ -600,8 +600,8 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
                 void this._handleMessage(data);
             };
 
-            // Open the transport. `connect()` is not part of IMessageTransport —
-            // some transports are handed over already open — so probe for it
+            // Open the transport. `connect()` is not part of IMessageTransport ,
+            // some transports are handed over already open: so probe for it
             // rather than testing for a specific class, which would tie the
             // server to one transport implementation.
             if ("connect" in transport && typeof (transport as { connect: unknown }).connect === "function") {
@@ -654,7 +654,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
             return;
         }
 
-        // Notifications carry no `id` — handle silently, never respond.
+        // Notifications carry no `id`, handle silently, never respond.
         if (!("id" in msg) || msg.id === null) {
             this._handleNotification(msg as JsonRpcNotification);
             return;

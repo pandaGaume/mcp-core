@@ -96,12 +96,12 @@ Both standard transports, both roles.
 | MCP client talking to a remote server | `mcp-core` | `StreamableHttpTransport` |
 | MCP server and client inside one process | `mcp-core` | `LoopbackTransport` |
 | MCP server inside a browser, exposed to the outside | `mcp-core` + [`mcp-broker-provider`](https://www.npmjs.com/package/@cyanmycelium/mcp-broker-provider) | `MultiplexTransport` |
-| Several servers federated behind one endpoint, with central auth | the above, plus [`mcp-broker`](https://www.npmjs.com/package/@cyanmycelium/mcp-broker) **run as a process** | — |
+| Several servers federated behind one endpoint, with central auth | the above, plus [`mcp-broker`](https://www.npmjs.com/package/@cyanmycelium/mcp-broker) **run as a process** | n/a |
 | MCP client driving a third-party server as a subprocess (`npx some-mcp-server`) | `mcp-core` | `ChildProcessTransport` |
 
 Two readings that trip people up.
 
-A Node MCP server needs **nothing but this package**. The broker is a relay, not a way to write a server: you reach for it when you have several servers to federate, credentials to centralise, or browsers to get out of — not to expose one server.
+A Node MCP server needs **nothing but this package**. The broker is a relay, not a way to write a server. You reach for it when you have several servers to federate, credentials to centralise, or browsers to get out of, not to expose one server.
 
 And the broker is a process you run (`npx @cyanmycelium/mcp-broker`), not a dependency you bundle. Your server stays on `mcp-core` and publishes itself into a slot; what you pay is an extra process, not extra code in your artifact.
 
@@ -151,7 +151,7 @@ import { StdioTransport, ChildProcessTransport,
 
 Tree-shaking ensures browser bundles never pull `node:*` modules.
 
-The root entry point holds everything that depends on nothing: the behavior stack, protocol-version negotiation, and the OAuth pieces (metadata document, challenge building **and parsing**, canonical resource URI). They sit there rather than under `/node` because a browser client needs the same pieces in reverse — it parses the challenge a server builds.
+The root entry point holds everything that depends on nothing: the behavior stack, protocol-version negotiation, and the OAuth pieces (metadata document, challenge building **and parsing**, canonical resource URI). They sit there rather than under `/node` because a browser client needs the same pieces in reverse: it parses the challenge a server builds.
 
 ## Quick start: a minimal MCP server
 
@@ -266,12 +266,12 @@ As of 0.3.0, four layers stack with explicit precedence (low → high):
 
 | # | Layer | Owner | When to use |
 |---|---|---|---|
-| 1 | Behavior | The behavior class (`_buildGrammars()`) | The behavior ships its own multi-language baselines — autonomous, no external file required |
+| 1 | Behavior | The behavior class (`_buildGrammars()`) | The behavior ships its own multi-language baselines, autonomous, no external file required |
 | 2 | Adapter | The behavior's adapter (`getGrammar(key)`) | Engine-specific binding nudges a few descriptions without forking the behavior |
 | 3 | Static | Application (`builder.withGrammar(key, g)`) | App-wide override at build time (replaces a baseline for every session) |
 | 4 | Store | Runtime (`McpGrammarStore`, via `McpGrammarBehavior`) | The agent (or operator) edits live descriptions per-profile, with `tools/list_changed` notifications |
 
-`McpGrammar.merge(...layers)` aggregates them in priority order: same-key entries in later layers win, missing entries cascade from earlier ones. The behavior is never required to know about static, store, or adapter layers — they merge transparently at the server.
+`McpGrammar.merge(...layers)` aggregates them in priority order: same-key entries in later layers win, missing entries cascade from earlier ones. The behavior is never required to know about static, store, or adapter layers: they merge transparently at the server.
 
 What a grammar may override, per session:
 
@@ -319,7 +319,7 @@ Claude sees the short description, every other client sees the long one. **No co
 
 ### Behavior-owned multi-language baselines
 
-Since 0.3.0, a behavior can ship its own grammars in code — one entry per `<agent>:<locale>[@version]` key it supports — without any external JSON files or broker layer. The application becomes autonomous on i18n; the broker is only needed if you want operator-editable overrides at runtime.
+Since 0.3.0, a behavior can ship its own grammars in code (one entry per `<agent>:<locale>[@version]` key it supports) without any external JSON files or broker layer. The application becomes autonomous on i18n; the broker is only needed if you want operator-editable overrides at runtime.
 
 ```ts
 import { McpBehavior, McpGrammar } from "@cyanmycelium/mcp-core";
@@ -369,7 +369,7 @@ const server = new McpServerBuilder()
     .build();
 ```
 
-For a Claude client requesting locale `fr-CA`, the resolver emits the chain `["claude:fr-ca", "claude:fr", "default:fr-ca", "default:fr", "claude:en", "default:en"]`. The server tries each in order and picks the first key for which at least one of the four layers has registered a grammar — so the behavior's `default:fr` matches even when a more specific Canadian-French variant is not shipped.
+For a Claude client requesting locale `fr-CA`, the resolver emits the chain `["claude:fr-ca", "claude:fr", "default:fr-ca", "default:fr", "claude:en", "default:en"]`. The server tries each in order and picks the first key for which at least one of the four layers has registered a grammar: so the behavior's `default:fr` matches even when a more specific Canadian-French variant is not shipped.
 
 The fallback narrowing order (`["version", "locale-region", "locale", "agent"]` by default) and key composition are both customizable; see `GrammarResolverOptions` for the full surface.
 
@@ -523,7 +523,7 @@ import { StreamableHttpEndpoint } from "@cyanmycelium/mcp-core/node";
 
 const endpoint = new StreamableHttpEndpoint({
     // One MCP server per session: a negotiated revision and a resolved grammar
-    // belong to one client. Behaviors are shared — they point at your state.
+    // belong to one client. Behaviors are shared: they point at your state.
     createServer: (transport) => new McpServerBuilder().withName("my-app").withTransport(transport).register(behavior).build(),
     allowedOrigins: ["https://app.example.com"],
 });
@@ -551,12 +551,12 @@ const endpoint = new StreamableHttpEndpoint({
     },
 });
 
-// Serve the discovery document yourself — unauthenticated, since a client
+// Serve the discovery document yourself, unauthenticated, since a client
 // fetches it precisely because it has no token yet.
 endpoint.protectedResourceMetadata();
 ```
 
-MCP defines no token format and no authorization server, so neither does this package: `ITokenValidator` is the single seam, and verifying a JWT stays with your application. Everything above it — the metadata document, the challenge header and its parser, the canonical resource URI, the 401/403 semantics — lives in `@cyanmycelium/mcp-core` itself rather than under `/node`, because a client needs the same pieces in reverse and they depend on nothing.
+MCP defines no token format and no authorization server, so neither does this package: `ITokenValidator` is the single seam, and verifying a JWT stays with your application. Everything above it (the metadata document, the challenge header and its parser, the canonical resource URI, the 401/403 semantics) lives in `@cyanmycelium/mcp-core` itself rather than under `/node`, because a client needs the same pieces in reverse and they depend on nothing.
 
 The client hands the negotiated revision to the transport, which stamps `MCP-Protocol-Version` on every subsequent request. Session ids are captured and echoed automatically, the standalone GET stream is opened after initialization (with or without a session) and re-established with `Last-Event-ID` when the server closes it, honouring the SSE `retry` delay. A session terminated server-side (HTTP 404) surfaces as a transport close, since recovering means a fresh `initialize`; call `client.connect()` again to start a new session. `close()` sends an HTTP DELETE to release the session.
 
@@ -589,7 +589,7 @@ The split is deliberate: anything that touches `node:*` lives under `node/`, eve
 
 ```sh
 npm install
-npm run build      # tsup — bundles each entry point, emits .d.ts
+npm run build      # tsup, bundles each entry point, emits .d.ts
 npm run typecheck  # tsc --noEmit, the only type gate: tsup transpiles without checking
 npm test           # vitest run
 npm run lint

@@ -169,7 +169,7 @@ export abstract class McpBehavior extends McpBehaviorBase {
     }
 
     public override async readResourceAsync(uri: string): Promise<McpResourceContent | undefined> {
-        // behavior root uri — build own resource content (cached)
+        // behavior root uri, build own resource content (cached)
         const rootUri = this.getResources()[0]?.uri;
         if (uri === rootUri) {
             if (this._resourceContentCache.has(uri)) {
@@ -193,7 +193,7 @@ export abstract class McpBehavior extends McpBehaviorBase {
             return promise;
         }
 
-        // specific instance uri — delegate to adapter
+        // specific instance uri, delegate to adapter
         return this._adapter.readResourceAsync(uri);
     }
 
