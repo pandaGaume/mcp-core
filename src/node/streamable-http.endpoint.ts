@@ -178,7 +178,12 @@ export class StreamableHttpEndpoint {
     /** Handles one HTTP request. Never throws: every failure becomes a status code. */
     async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
         try {
-            if (!this._originAllowed(req)) return respond(res, 403, "invalid_origin", "Origin not allowed");
+            // A request with no Origin cannot come from a browser, so it is not
+            // the header check's business and passes straight through.
+            const origin = header(req, "origin");
+            if (origin !== undefined && !this._originAllowed(origin)) {
+                return respond(res, 403, "invalid_origin", this._originRefusedMessage(origin));
+            }
 
             const version = header(req, "mcp-protocol-version");
             if (version !== undefined && !isProtocolVersionSupported(version, this._options.protocolVersions)) {
@@ -379,13 +384,33 @@ export class StreamableHttpEndpoint {
         }
     }
 
-    private _originAllowed(req: IncomingMessage): boolean {
-        const origin = header(req, "origin");
-        if (origin === undefined) return true; // not a browser
-
+    private _originAllowed(origin: string): boolean {
         const allowed = this._options.allowedOrigins;
         if (typeof allowed === "function") return allowed(origin);
         return allowed?.includes(origin) ?? false;
+    }
+
+    /**
+     * Builds the `403` body for a refused origin.
+     *
+     * The refused value is echoed verbatim, because the mismatch is almost
+     * always invisible from the outside: a scheme, a port or a trailing slash.
+     * `respond` serializes through `JSON.stringify` into
+     * `application/json; charset=utf-8`, so the header value cannot break out
+     * of the body. The unconfigured case gets its own sentence: an empty
+     * `allowedOrigins` is a closed door by design, not a typo, and the reader
+     * needs to know which of the two situations they are in.
+     */
+    private _originRefusedMessage(origin: string): string {
+        const allowed = this._options.allowedOrigins;
+        if (allowed === undefined) {
+            return `Origin "${origin}" is not allowed: this endpoint has no allowedOrigins configured, so every browser Origin is refused. Set allowedOrigins to the exact origins that may reach it.`;
+        }
+        if (typeof allowed === "function") {
+            return `Origin "${origin}" is not allowed by this endpoint's allowedOrigins predicate.`;
+        }
+        const listed = allowed.length === 0 ? "the allowedOrigins list is empty" : `allowedOrigins holds ${allowed.map((o) => `"${o}"`).join(", ")}`;
+        return `Origin "${origin}" is not allowed: ${listed}. Origins are compared verbatim, so scheme, host, port and the absence of a trailing slash must all match.`;
     }
 }
 

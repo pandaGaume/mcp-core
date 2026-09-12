@@ -206,6 +206,30 @@ describe("guards", () => {
         expect(allowed.status).toBe(200);
     });
 
+    it("echoes the refused Origin and the configured list in the 403 body", async () => {
+        // The mismatch is usually a scheme, a port or a trailing slash, none of
+        // which the caller can see from a bare "Origin not allowed".
+        harness = await startEndpoint({ allowedOrigins: ["https://trusted.example"] });
+
+        const res = await fetch(harness.url, { method: "POST", headers: { origin: "http://trusted.example" }, body: INIT });
+        expect(res.status).toBe(403);
+
+        const body = (await res.json()) as { error: string; error_description: string };
+        expect(body.error).toBe("invalid_origin");
+        expect(body.error_description).toContain('"http://trusted.example"');
+        expect(body.error_description).toContain('"https://trusted.example"');
+    });
+
+    it("says the endpoint is closed by default when allowedOrigins is unset", async () => {
+        harness = await startEndpoint();
+
+        const res = await fetch(harness.url, { method: "POST", headers: { origin: "https://any.example" }, body: INIT });
+        expect(res.status).toBe(403);
+
+        const body = (await res.json()) as { error_description: string };
+        expect(body.error_description).toContain("no allowedOrigins configured");
+    });
+
     it("allows a request with no Origin, since it cannot be a browser", async () => {
         harness = await startEndpoint({ allowedOrigins: [] });
         expect((await fetch(harness.url, { method: "POST", body: INIT })).status).toBe(200);

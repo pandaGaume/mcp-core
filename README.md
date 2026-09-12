@@ -468,6 +468,29 @@ A server never opens its own connection: it is handed a transport, and `withTran
 
 Implement `IMessageTransport` for anything else (WebRTC, postMessage, gRPC). The WebSocket tunnel to a CyanMycelium broker lives in [`@cyanmycelium/mcp-broker-provider`](https://www.npmjs.com/package/@cyanmycelium/mcp-broker-provider), which is where `DirectTransport` and `MultiplexTransport` moved in `0.5.0`.
 
+### What `start()` resolving does and does not mean
+
+`await server.start()` resolves when **the transport reports itself open**. It is not a statement about the far end. Over stdio the two coincide, but over a tunnel (a broker slot, a relay, a reverse proxy) the socket is open long before the peer says whether it will serve this server at all, and a refusal arrives afterwards as an ordinary transport error. So do not print "connected" or "published" there; print it when the first `initialize` request arrives.
+
+Two optional events carry what `start()` cannot:
+
+```ts
+const server = new McpServerBuilder().withName("my-app").withTransport(transport).build();
+
+server.onTransportError?.subscribe((error) => console.warn("[my-app] transport:", error.message));
+server.onDisconnected?.subscribe(() => console.warn("[my-app] transport closed, the next session renegotiates"));
+
+await server.start();
+```
+
+| | fires when |
+|---|---|
+| `start()` rejects | the transport failed **before** reporting open |
+| `onTransportError` | the transport reports an error **after** open: a refused slot, an error frame from a tunnel, a socket protocol fault, a reset |
+| `onDisconnected` | the transport closed and the session state was dropped; reconnecting stays the transport's business |
+
+When nothing is subscribed to `onTransportError`, the error is written to `console.error` rather than dropped: an unobserved transport failure is a bug, not a quiet success. Both members are optional on `IMcpServer` so existing implementations of the interface keep compiling; `McpServer` always provides them.
+
 ### Driving a server you launch
 
 `ChildProcessTransport` is what lets an `McpClient` use the servers people actually publish, which ship as a command rather than a listening endpoint:
@@ -534,6 +557,17 @@ createServer((req, res) => void endpoint.handleRequest(req, res)).listen(3000);
 Mount it the same way in Express or Fastify. A `POST` carrying a request is answered as `application/json`; notifications get `202`; server-initiated messages travel on the standalone `GET` stream. Session ids are issued on the `initialize` response and required afterwards, `DELETE` terminates a session, and a request naming a terminated one gets `404` so the client knows to re-initialize.
 
 `Origin` is validated and refused with `403` unless listed in `allowedOrigins`, which is closed by default: without that check any web page can drive a local MCP server through DNS rebinding. A request with no `Origin` header cannot come from a browser and is allowed.
+
+The `403` body names the value that was refused and what it was compared against, because the mismatch is usually invisible from the outside (a scheme, a port, a trailing slash):
+
+```json
+{
+    "error": "invalid_origin",
+    "error_description": "Origin \"http://app.example.com\" is not allowed: allowedOrigins holds \"https://app.example.com\". Origins are compared verbatim, so scheme, host, port and the absence of a trailing slash must all match."
+}
+```
+
+Leaving `allowedOrigins` unset says so in its own words, since a closed door by design and a typo look identical from the client.
 
 ### Protecting it with OAuth
 

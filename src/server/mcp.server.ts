@@ -11,12 +11,63 @@ import type {
     McpServerCapabilities,
     McpTool,
 } from "../interfaces";
-import type { Unsubscribe } from "../interfaces/eventSource";
+import type { IEventEmitter, IEventSource, Unsubscribe } from "../interfaces/eventSource";
+import { createEventEmitter } from "../interfaces/eventSource";
 import { McpGrammar } from "../mcp.grammar";
 import type { McpGrammarStore, McpGrammarStoreChangeEvent } from "../mcp.grammarStore";
 import { negotiateProtocolVersion } from "../mcp.protocol";
 import { McpToolResults } from "../mcp.toolResult";
 import { Mcp } from "./jsonrpc.helpers";
+
+/**
+ * An {@link IEventEmitter} that also reports how many handlers are subscribed.
+ *
+ * Needed because {@link McpServer} falls back to `console.error` when a
+ * transport error has no subscriber, and the plain emitter cannot say whether
+ * anyone is listening. Merely reading the `onTransportError` property must not
+ * count as listening, otherwise a caller that only inspects the surface would
+ * silence the fallback.
+ */
+interface ICountingEventEmitter<T> extends IEventEmitter<T> {
+    /** Number of currently subscribed handlers. */
+    readonly size: number;
+}
+
+/** Builds an {@link ICountingEventEmitter} on top of the package's plain emitter. */
+function createCountingEventEmitter<T>(): ICountingEventEmitter<T> {
+    const inner = createEventEmitter<T>();
+    let size = 0;
+
+    return {
+        get size(): number {
+            return size;
+        },
+
+        subscribe(handler: (value: T) => void): Unsubscribe {
+            const unsubscribe = inner.subscribe(handler);
+            size++;
+            // The returned handle must be idempotent: callers do unsubscribe
+            // twice, and a double decrement would resurrect the console
+            // fallback while a live handler is still attached.
+            let released = false;
+            return () => {
+                if (released) return;
+                released = true;
+                size--;
+                unsubscribe();
+            };
+        },
+
+        emit(value: T): void {
+            inner.emit(value);
+        },
+
+        clear(): void {
+            inner.clear();
+            size = 0;
+        },
+    };
+}
 
 /**
  * Default implementation of {@link IMcpServer}.
@@ -112,6 +163,17 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     /** Unsubscribe handle for the grammar store change listener. */
     private _storeUnsubscribe: Unsubscribe | undefined;
 
+    // ── Transport events ─────────────────────────────────────────────────────
+
+    /**
+     * Emitter behind {@link onTransportError}. Created on first access, like the
+     * client's own change emitters, so a server nobody observes allocates nothing.
+     */
+    private _onTransportError: ICountingEventEmitter<Error> | undefined;
+
+    /** Emitter behind {@link onDisconnected}. Created on first access. */
+    private _onDisconnected: ICountingEventEmitter<void> | undefined;
+
     constructor(
         name: string,
         options: IMcpServerOptions,
@@ -165,13 +227,45 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         return this._protocolVersion;
     }
 
+    /**
+     * Transport-level errors reported after the transport opened.
+     *
+     * See {@link IMcpServer.onTransportError}. When no handler is subscribed the
+     * error is written to `console.error` instead, so a refused slot or a broken
+     * socket is never swallowed.
+     */
+    get onTransportError(): IEventSource<Error> {
+        if (!this._onTransportError) this._onTransportError = createCountingEventEmitter<Error>();
+        return this._onTransportError;
+    }
+
+    /**
+     * Fires when the transport closes and the session state is dropped.
+     * See {@link IMcpServer.onDisconnected}.
+     */
+    get onDisconnected(): IEventSource<void> {
+        if (!this._onDisconnected) this._onDisconnected = createCountingEventEmitter<void>();
+        return this._onDisconnected;
+    }
+
     // -------------------------------------------------------------------------
     // IMcpServer, lifecycle
     // -------------------------------------------------------------------------
 
     /**
      * Opens the transport and starts serving.
-     * Resolves once the transport reports itself open, rejects on the first error.
+     *
+     * Resolves once **the transport reports itself open**, and rejects only on an
+     * error raised before that point. Resolving is therefore not a guarantee that
+     * a remote peer accepted the connection: with a tunnelled transport (a broker
+     * slot, a relay, a reverse proxy) the socket is open long before the peer has
+     * said whether it will serve this server at all, and a refusal arrives as an
+     * ordinary post-open transport error. Do not log "connected" here; log it when
+     * the first `initialize` request arrives.
+     *
+     * Subscribe to {@link onTransportError} for everything that happens after the
+     * transport is open, and to {@link onDisconnected} for the close.
+     *
      * Safe to call again after {@link stop}.
      *
      * @throws {Error} when the server was built without a transport.
@@ -587,10 +681,17 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
             };
 
             transport.onError = (error: Error) => {
-                // Only reject the initial promise; subsequent errors are handled via onClose.
+                // Before open, the error is the start() promise's business.
                 if (!this._isRunning) {
                     reject(new Error(`McpServer: transport failed to open, ${error.message}`));
+                    return;
                 }
+                // After open, start() is already settled and onClose only fires
+                // when the medium actually closes, which a refusal or a protocol
+                // fault need not do. Without this branch such errors vanished
+                // entirely and the caller kept a resolved start() next to a
+                // server no peer was serving.
+                this._reportTransportError(error);
             };
 
             transport.onClose = () => this._onDisconnect();
@@ -616,6 +717,9 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      * The session is dropped, not rebuilt: reconnecting belongs to the
      * transport, which is the only party that knows what that means for its
      * medium. When it reopens, the client renegotiates from `initialize`.
+     *
+     * Observers are told through {@link onDisconnected} once the state is clean,
+     * so a handler that reads {@link isRunning} sees `false`.
      */
     private _onDisconnect(): void {
         this._isRunning = false;
@@ -625,6 +729,25 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         this._sessionGrammar = undefined; // grammar must be re-resolved on reconnection
         this._currentGrammarKey = undefined;
         this._clearIdleTimer();
+        this._onDisconnected?.emit();
+    }
+
+    /**
+     * Publishes a post-open transport error.
+     *
+     * Falls back to `console.error` when nothing is subscribed, on purpose:
+     * silence is the defect this exists to fix, and a caller who has not wired
+     * {@link onTransportError} yet still needs the failure to reach a log. The
+     * message names the subscription point so the fallback tells the reader how
+     * to take over.
+     */
+    private _reportTransportError(error: Error): void {
+        if (this._onTransportError && this._onTransportError.size > 0) {
+            this._onTransportError.emit(error);
+            return;
+        }
+        // eslint-disable-next-line no-console
+        console.error(`[mcp-core] McpServer "${this._name}": transport error after open, ${error.message}. Subscribe to server.onTransportError to handle it yourself.`);
     }
 
     // -------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 import type { IMcpServerHandlers, McpClientCapabilities, McpClientInfo, McpServerIdentity } from "./mcp.core.interfaces";
 import type { IMcpBehavior } from "./mcp.behavior.interfaces";
+import type { IEventSource } from "./eventSource";
 import type { IMessageTransport } from "./mcp.transport.interfaces";
 import type { McpGrammar } from "../mcp.grammar";
 import type { McpGrammarStore } from "../mcp.grammarStore";
@@ -196,11 +197,52 @@ export interface IMcpServer {
     /** Whether the server is currently running and accepting connections. */
     readonly isRunning: boolean;
 
-    /** Starts the server and begins accepting client connections. */
+    /**
+     * Starts the server and begins accepting client connections.
+     *
+     * Resolving means the **transport reported itself open**. It is not a
+     * guarantee that a remote peer accepted the connection: a broker can still
+     * refuse the slot, a tunnel can answer with an error envelope, and a socket
+     * can fault, all after the transport is open. Subscribe to
+     * {@link onTransportError} to learn about those.
+     */
     start(): Promise<void>;
 
     /** Gracefully stops the server and closes all active connections. */
     stop(): Promise<void>;
+
+    /**
+     * Fires on every transport-level error reported **after** the transport
+     * opened, which {@link start} cannot report because its promise is already
+     * settled by then. Typical payloads: a broker refusing the slot, a tunnel
+     * error envelope, a WebSocket protocol fault, a socket reset.
+     *
+     * Optional so existing implementations of this interface keep compiling.
+     * {@link McpServer} always provides it, and when nothing is subscribed it
+     * writes the error to `console.error` instead: a transport failure must
+     * never be fully silent.
+     *
+     * A pre-open error is not routed here; it rejects {@link start}.
+     *
+     * @example
+     * ```typescript
+     * server.onTransportError?.subscribe((error) => log.warn("mcp transport", error));
+     * await server.start(); // resolves as soon as the transport is open
+     * ```
+     */
+    readonly onTransportError?: IEventSource<Error>;
+
+    /**
+     * Fires when the transport reports that it closed, cleanly or not. The
+     * server has already dropped its session state by then: the next
+     * `initialize` renegotiates from scratch. A deliberate {@link stop} raises
+     * it too, whenever the transport reports the close it was asked for.
+     *
+     * Reconnection belongs to the transport, so this event is a notification,
+     * not a request to act. Optional, for the same source-compatibility reason
+     * as {@link onTransportError}.
+     */
+    readonly onDisconnected?: IEventSource<void>;
 
     register(...behavior: IMcpBehavior[]): IMcpServer;
 
