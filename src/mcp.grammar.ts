@@ -66,10 +66,31 @@ export type McpGrammarTemplateEntry = {
  *
  * {@link McpGrammar.toJSON} always emits the modern shape.
  */
+/**
+ * The server's own words, in one wording: the one-line description a client
+ * reads in `serverInfo`, and the usage note it receives in
+ * `initialize.instructions`. A grammar file for one audience and one
+ * language can therefore carry everything a session reads.
+ */
+export type McpGrammarServerEntry = {
+    description?: string;
+    instructions?: string;
+};
+
 export type McpGrammarData = {
+    server?: McpGrammarServerEntry;
     tools?: Record<string, McpGrammarToolEntry>;
     resources?: Record<string, McpGrammarResourceEntry>;
     templates?: Record<string, McpGrammarTemplateEntry>;
+};
+
+/** What a grammar names that the surface it describes does not have. */
+export type McpGrammarProblem = {
+    /** `tool`, `property`, `resource` or `template`. */
+    kind: string;
+    /** The name the grammar used. */
+    name: string;
+    message: string;
 };
 
 /** @deprecated Use {@link McpGrammarData}. Kept for v0.1 callers. */
@@ -78,6 +99,7 @@ export type McpGrammarLegacyData = Record<string, McpGrammarToolEntry>;
 // ── Grammar class ────────────────────────────────────────────────────────────
 
 export class McpGrammar {
+    private _server: McpGrammarServerEntry = {};
     private _tools = new Map<string, McpGrammarToolEntry>();
     private _resources = new Map<string, McpGrammarResourceEntry>();
     private _templates = new Map<string, McpGrammarTemplateEntry>();
@@ -89,6 +111,7 @@ export class McpGrammar {
 
         if (McpGrammar._isModernShape(data)) {
             const m = data as McpGrammarData;
+            if (m.server) this._server = { ...m.server };
             if (m.tools) {
                 for (const [k, v] of Object.entries(m.tools)) this._tools.set(k, McpGrammar._cloneToolEntry(v));
             }
@@ -109,10 +132,79 @@ export class McpGrammar {
     private static _isModernShape(data: McpGrammarData | McpGrammarLegacyData): boolean {
         const d = data as McpGrammarData;
         return (
+            (typeof d.server === "object" && d.server !== null) ||
             (typeof d.tools === "object" && d.tools !== null) ||
             (typeof d.resources === "object" && d.resources !== null) ||
             (typeof d.templates === "object" && d.templates !== null)
         );
+    }
+
+    // ── Server words ─────────────────────────────────────────────────────────
+
+    /** The one-line description of the server in this wording, if the grammar carries one. */
+    getServerDescription(): string | undefined {
+        return this._server.description;
+    }
+
+    setServerDescription(description: string): void {
+        this._server.description = description;
+    }
+
+    /** The usage note a session receives in `initialize.instructions`, in this wording, if the grammar carries one. */
+    getServerInstructions(): string | undefined {
+        return this._server.instructions;
+    }
+
+    setServerInstructions(instructions: string): void {
+        this._server.instructions = instructions;
+    }
+
+    // ── Check against a surface ──────────────────────────────────────────────
+
+    /**
+     * What this grammar names that the given surface does not have: a tool,
+     * a property (dotted for nested objects and array items, as
+     * `properties` keys are written), a resource URI, a template. A grammar
+     * with no problem describes only things that exist; the server applies
+     * it without surprise.
+     */
+    check(surface: { tools?: ReadonlyArray<{ name: string; inputSchema?: unknown }>; resources?: ReadonlyArray<{ uri: string }>; templates?: ReadonlyArray<{ uriTemplate: string }> }): McpGrammarProblem[] {
+        const problems: McpGrammarProblem[] = [];
+        const tools = new Map((surface.tools ?? []).map((t) => [t.name, t]));
+        for (const [name, entry] of this._tools) {
+            const tool = tools.get(name);
+            if (!tool) {
+                problems.push({ kind: "tool", name, message: `tool "${name}" does not exist on this surface` });
+                continue;
+            }
+            const paths = new Set(McpGrammar._schemaPaths(tool.inputSchema));
+            for (const prop of Object.keys(entry.properties ?? {})) {
+                if (!paths.has(prop)) problems.push({ kind: "property", name: `${name}.${prop}`, message: `tool "${name}" has no property "${prop}" (properties: ${[...paths].join(", ") || "none"})` });
+            }
+        }
+        if (surface.resources) {
+            const uris = new Set(surface.resources.map((r) => r.uri));
+            for (const uri of this._resources.keys()) if (!uris.has(uri)) problems.push({ kind: "resource", name: uri, message: `resource "${uri}" does not exist on this surface` });
+        }
+        if (surface.templates) {
+            const uris = new Set(surface.templates.map((t) => t.uriTemplate));
+            for (const uri of this._templates.keys()) if (!uris.has(uri)) problems.push({ kind: "template", name: uri, message: `template "${uri}" does not exist on this surface` });
+        }
+        return problems;
+    }
+
+    /** The property names a schema declares, dotted for nested objects and array items. */
+    private static _schemaPaths(schema: unknown, prefix = ""): string[] {
+        const props = (schema as { properties?: Record<string, unknown> } | undefined)?.properties;
+        if (!props) return [];
+        const out: string[] = [];
+        for (const [name, sub] of Object.entries(props)) {
+            out.push(`${prefix}${name}`);
+            out.push(...McpGrammar._schemaPaths(sub, `${prefix}${name}.`));
+            const items = (sub as { items?: unknown } | undefined)?.items;
+            if (items) out.push(...McpGrammar._schemaPaths(items, `${prefix}${name}.`));
+        }
+        return out;
     }
 
     // ── Tool title / description ─────────────────────────────────────────────
@@ -211,6 +303,7 @@ export class McpGrammar {
     toJSON(): McpGrammarData {
         const out: McpGrammarData = {};
 
+        if (this._server.description !== undefined || this._server.instructions !== undefined) out.server = { ...this._server };
         if (this._tools.size > 0) {
             out.tools = {};
             for (const [k, v] of this._tools) out.tools[k] = McpGrammar._cloneToolEntry(v);
@@ -247,6 +340,10 @@ export class McpGrammar {
         const result = new McpGrammar();
         for (const g of grammars) {
             if (!g) continue;
+
+            // Server words
+            if (g._server.description !== undefined) result._server.description = g._server.description;
+            if (g._server.instructions !== undefined) result._server.instructions = g._server.instructions;
 
             // Tools
             for (const [toolName, src] of g._tools) {

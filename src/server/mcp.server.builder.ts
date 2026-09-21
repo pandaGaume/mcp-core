@@ -31,6 +31,7 @@ export class McpServerBuilder implements IMcpServerBuilder {
     private _behaviors: IMcpBehavior[] = [];
     private _options: IMcpServerOptions = {};
     private _grammars = new Map<string, McpGrammar>();
+    private _wordingRule: string | undefined;
     private _grammarResolver: McpGrammarResolver | undefined;
     private _grammarStore: McpGrammarStore | undefined;
     private _transport: IMessageTransport | undefined;
@@ -89,6 +90,25 @@ export class McpServerBuilder implements IMcpServerBuilder {
      */
     withGrammar(key: string, grammar: McpGrammar): this {
         this._grammars.set(key, grammar);
+        return this;
+    }
+
+    /** Registers several named grammars at once (a loaded directory, for one). */
+    withGrammars(grammars: Iterable<readonly [string, McpGrammar]>): this {
+        for (const [key, grammar] of grammars) this._grammars.set(key, grammar);
+        return this;
+    }
+
+    /**
+     * The wording rule, checked at {@link build}: every tool and every
+     * resource of every behavior has a description, and has it in one place
+     * only: inline in the behavior, or in the named grammar (the wording a
+     * session falls back to), never both, never neither. The behavior's code
+     * then declares structure and the grammar files carry the words, and a
+     * text cannot drift between two copies.
+     */
+    withWordingRule(baselineKey: string): this {
+        this._wordingRule = baselineKey;
         return this;
     }
 
@@ -165,6 +185,10 @@ export class McpServerBuilder implements IMcpServerBuilder {
      */
     build(): IMcpServer {
         if (!this._transport) throw new Error("McpServerBuilder: withTransport() is required before build()");
+        if (this._wordingRule !== undefined) {
+            const problems = this._checkWording(this._wordingRule);
+            if (problems.length) throw new Error(`McpServerBuilder: wording rule (${this._wordingRule}): ${problems.join("; ")}`);
+        }
 
         const server = new McpServer(this._name, this._options, this._initializer, this._handlers, this._grammars, this._grammarResolver, this._transport, this._grammarStore);
 
@@ -173,5 +197,35 @@ export class McpServerBuilder implements IMcpServerBuilder {
         }
 
         return server;
+    }
+
+    /** The problems the wording rule finds, readable, empty when the rule holds. */
+    private _checkWording(baselineKey: string): string[] {
+        const problems: string[] = [];
+        const layers: McpGrammar[] = [];
+        for (const behavior of this._behaviors) {
+            const own = behavior.getGrammar?.(baselineKey);
+            if (own) layers.push(own);
+        }
+        const static_ = this._grammars.get(baselineKey);
+        if (static_) layers.push(static_);
+        const store = this._grammarStore?.get(baselineKey);
+        if (store) layers.push(store);
+        const words = layers.length ? McpGrammar.merge(...layers) : undefined;
+        for (const behavior of this._behaviors) {
+            for (const tool of behavior.getTools()) {
+                const inline = Boolean(tool.description && tool.description.trim());
+                const filed = Boolean(words?.getToolDescription(tool.name));
+                if (inline && filed) problems.push(`tool "${tool.name}" is described both inline and in grammar "${baselineKey}"`);
+                if (!inline && !filed) problems.push(`tool "${tool.name}" has no description, inline or in grammar "${baselineKey}"`);
+            }
+            for (const resource of behavior.getResources()) {
+                const inline = Boolean(resource.description && resource.description.trim());
+                const filed = Boolean(words?.getResourceDescription(resource.uri));
+                if (inline && filed) problems.push(`resource "${resource.uri}" is described both inline and in grammar "${baselineKey}"`);
+                if (!inline && !filed) problems.push(`resource "${resource.uri}" has no description, inline or in grammar "${baselineKey}"`);
+            }
+        }
+        return problems;
     }
 }
