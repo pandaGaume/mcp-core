@@ -13,7 +13,9 @@
  * they are. Every grammar is checked against the surface it will describe
  * (tools, resources, templates): a name the surface does not have is a
  * problem, listed with its file, and `loadGrammarDirectory` throws unless
- * told to keep going.
+ * told to keep going. With a `referenceLocale`, the phrases of every
+ * `default/<locale>` file must match that locale's (same keys, same holes),
+ * and a family file may only reword phrases the reference has.
  *
  * Node only (it reads the file system): `@cyanmycelium/mcp-core/node`.
  */
@@ -35,6 +37,8 @@ export interface GrammarDirectoryOptions {
     baseline?: string;
     /** Return the problems instead of throwing on them. Default false. */
     tolerate?: boolean;
+    /** The locale whose phrases every other file must match: same keys and holes for the baseline's locales, a subset for a family's. None checked without it. */
+    referenceLocale?: string;
 }
 
 export interface GrammarDirectoryFile {
@@ -84,6 +88,18 @@ export function loadGrammarDirectory(dir: string, options: GrammarDirectoryOptio
                 files.push({ key, file, sha256: createHash("sha256").update(text).digest("hex"), problems: own });
             }
         }
+    }
+    if (options.referenceLocale) {
+        const reference = raw.get(`${baseline}:${options.referenceLocale.toLowerCase()}`)?.grammar;
+        if (!reference) problems.push(`${dir}: no ${baseline}/${options.referenceLocale}.json to take the phrases from`);
+        else
+            for (const [key, { agent, grammar }] of raw) {
+                if (key === `${baseline}:${options.referenceLocale.toLowerCase()}`) continue;
+                const file = files.find((f) => f.key === key);
+                const own = reference.comparePhrases(grammar, { subset: agent !== baseline });
+                for (const p of own) problems.push(`${file?.file ?? key}: ${p.message}`);
+                if (file) file.problems.push(...own);
+            }
     }
     const grammars = new Map<string, McpGrammar>();
     for (const [key, { agent, locale, grammar }] of raw) {

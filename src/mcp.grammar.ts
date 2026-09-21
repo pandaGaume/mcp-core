@@ -1,6 +1,7 @@
 /**
  * Serialisable grammar layer that holds description overrides for tools,
- * resources, and resource templates exposed by an MCP server. Editable at
+ * resources, and resource templates exposed by an MCP server, the server's
+ * own words, and the free phrases a host says or shows (1.2.0). Editable at
  * runtime and round-tripped to/from JSON.
  *
  * The MCP behaviour uses up to two grammar layers (highest priority first):
@@ -77,21 +78,47 @@ export type McpGrammarServerEntry = {
     instructions?: string;
 };
 
+/**
+ * Free sentences in one wording (1.2.0): what a host says or shows that
+ * describes no tool, keyed, with `{holes}` filled at use
+ * (`"step.fit": "Model fitted on {rows} rows"`). A locale file carries the
+ * same keys with the same holes as the reference locale; the server hands a
+ * session its phrases as the resource `grammar://phrases`.
+ */
+export type McpGrammarPhrases = Record<string, string>;
+
 export type McpGrammarData = {
     server?: McpGrammarServerEntry;
     tools?: Record<string, McpGrammarToolEntry>;
     resources?: Record<string, McpGrammarResourceEntry>;
     templates?: Record<string, McpGrammarTemplateEntry>;
+    phrases?: McpGrammarPhrases;
 };
 
-/** What a grammar names that the surface it describes does not have. */
+/** What a grammar names that the surface it describes does not have, or a phrase that differs from the reference wording. */
 export type McpGrammarProblem = {
-    /** `tool`, `property`, `resource` or `template`. */
+    /** `tool`, `property`, `resource`, `template` or `phrase`. */
     kind: string;
     /** The name the grammar used. */
     name: string;
     message: string;
 };
+
+/** The URI under which a server serves the phrases of a session's grammar. */
+export const GRAMMAR_PHRASES_URI = "grammar://phrases";
+
+/** A hole in a phrase: `{name}`, letters, digits, `_`, `.`, `-`. */
+const HOLE = /\{([a-zA-Z0-9_.-]+)\}/g;
+
+/** The holes a phrase names, sorted, once each. */
+export function phraseHoles(template: string): string[] {
+    return [...new Set([...template.matchAll(HOLE)].map((m) => m[1]))].sort();
+}
+
+/** A phrase with its holes filled from `values`; a hole with no value reads `?`. */
+export function fillPhrase(template: string, values: Record<string, unknown> = {}): string {
+    return template.replace(HOLE, (_, name: string) => (name in values && values[name] !== undefined ? String(values[name]) : "?"));
+}
 
 /** @deprecated Use {@link McpGrammarData}. Kept for v0.1 callers. */
 export type McpGrammarLegacyData = Record<string, McpGrammarToolEntry>;
@@ -103,6 +130,7 @@ export class McpGrammar {
     private _tools = new Map<string, McpGrammarToolEntry>();
     private _resources = new Map<string, McpGrammarResourceEntry>();
     private _templates = new Map<string, McpGrammarTemplateEntry>();
+    private _phrases = new Map<string, string>();
 
     // ── Construction ─────────────────────────────────────────────────────────
 
@@ -121,6 +149,9 @@ export class McpGrammar {
             if (m.templates) {
                 for (const [k, v] of Object.entries(m.templates)) this._templates.set(k, McpGrammar._cloneTemplateEntry(v));
             }
+            if (m.phrases) {
+                for (const [k, v] of Object.entries(m.phrases)) if (typeof v === "string") this._phrases.set(k, v);
+            }
         } else {
             // Legacy flat shape: top-level keyed by tool name.
             for (const [k, v] of Object.entries(data as McpGrammarLegacyData)) {
@@ -135,8 +166,68 @@ export class McpGrammar {
             (typeof d.server === "object" && d.server !== null) ||
             (typeof d.tools === "object" && d.tools !== null) ||
             (typeof d.resources === "object" && d.resources !== null) ||
-            (typeof d.templates === "object" && d.templates !== null)
+            (typeof d.templates === "object" && d.templates !== null) ||
+            (typeof d.phrases === "object" && d.phrases !== null)
         );
+    }
+
+    // ── Phrases ──────────────────────────────────────────────────────────────
+
+    /** The phrase under a key, its holes unfilled; `undefined` when the grammar has none. */
+    getPhrase(key: string): string | undefined {
+        return this._phrases.get(key);
+    }
+
+    setPhrase(key: string, template: string): void {
+        this._phrases.set(key, template);
+    }
+
+    /** The keys of every phrase this grammar carries, in insertion order. */
+    listPhrases(): string[] {
+        return [...this._phrases.keys()];
+    }
+
+    /** True when the grammar carries at least one phrase. */
+    hasPhrases(): boolean {
+        return this._phrases.size > 0;
+    }
+
+    /** The phrases as plain data, for a resource or a file. */
+    getPhrases(): McpGrammarPhrases {
+        return Object.fromEntries(this._phrases);
+    }
+
+    /**
+     * A phrase filled with `values`. A key the grammar lacks comes back as
+     * the key itself, so a missing sentence is seen where it should have
+     * been read; a hole with no value reads `?`, never an invented value.
+     */
+    phrase(key: string, values: Record<string, unknown> = {}): string {
+        const template = this._phrases.get(key);
+        return template === undefined ? key : fillPhrase(template, values);
+    }
+
+    /**
+     * How `other`'s phrases differ from this grammar's, taken as the
+     * reference wording: a key this grammar has that `other` lacks, a key
+     * `other` has that this grammar lacks, a phrase whose holes differ. Two
+     * locale files of one server should differ in nothing here.
+     */
+    comparePhrases(other: McpGrammar, options: { subset?: boolean } = {}): McpGrammarProblem[] {
+        const problems: McpGrammarProblem[] = [];
+        for (const [key, template] of this._phrases) {
+            const theirs = other._phrases.get(key);
+            if (theirs === undefined) {
+                if (!options.subset) problems.push({ kind: "phrase", name: key, message: `phrase "${key}" is missing` });
+                continue;
+            }
+            const mine = phraseHoles(template).join(",");
+            const holes = phraseHoles(theirs).join(",");
+            if (mine !== holes) problems.push({ kind: "phrase", name: key, message: `phrase "${key}" names the holes {${holes}} where the reference names {${mine}}` });
+        }
+        for (const key of other._phrases.keys())
+            if (!this._phrases.has(key)) problems.push({ kind: "phrase", name: key, message: `phrase "${key}" is not in the reference wording` });
+        return problems;
     }
 
     // ── Server words ─────────────────────────────────────────────────────────
@@ -172,8 +263,14 @@ export class McpGrammar {
         tools?: ReadonlyArray<{ name: string; inputSchema?: unknown }>;
         resources?: ReadonlyArray<{ uri: string }>;
         templates?: ReadonlyArray<{ uriTemplate: string }>;
+        /** The phrase keys the host reads; a phrase under another key is a problem. */
+        phrases?: ReadonlyArray<string>;
     }): McpGrammarProblem[] {
         const problems: McpGrammarProblem[] = [];
+        if (surface.phrases) {
+            const keys = new Set(surface.phrases);
+            for (const key of this._phrases.keys()) if (!keys.has(key)) problems.push({ kind: "phrase", name: key, message: `phrase "${key}" is not one the host reads` });
+        }
         const tools = new Map((surface.tools ?? []).map((t) => [t.name, t]));
         for (const [name, entry] of this._tools) {
             const tool = tools.get(name);
@@ -327,6 +424,7 @@ export class McpGrammar {
             out.templates = {};
             for (const [k, v] of this._templates) out.templates[k] = McpGrammar._cloneTemplateEntry(v);
         }
+        if (this._phrases.size > 0) out.phrases = Object.fromEntries(this._phrases);
 
         return out;
     }
@@ -384,6 +482,9 @@ export class McpGrammar {
                 if (src.title !== undefined) dest.title = src.title;
                 if (src.description !== undefined) dest.description = src.description;
             }
+
+            // Phrases: a later wording replaces a sentence, never erases one.
+            for (const [key, template] of g._phrases) result._phrases.set(key, template);
         }
         return result;
     }

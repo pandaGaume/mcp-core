@@ -13,7 +13,7 @@ import type {
 } from "../interfaces";
 import type { IEventEmitter, IEventSource, Unsubscribe } from "../interfaces/eventSource";
 import { createEventEmitter } from "../interfaces/eventSource";
-import { McpGrammar } from "../mcp.grammar";
+import { GRAMMAR_PHRASES_URI, McpGrammar } from "../mcp.grammar";
 import type { McpGrammarStore, McpGrammarStoreChangeEvent } from "../mcp.grammarStore";
 import { negotiateProtocolVersion } from "../mcp.protocol";
 import { McpToolResults } from "../mcp.toolResult";
@@ -466,6 +466,14 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     resourcesList(req: JsonRpcRequest): JsonRpcResponse {
         const resources = Array.from(this._behaviors.values()).flatMap((i) => i.getResources());
         const patched = this._sessionGrammar ? this._applyResourceGrammar(resources, this._sessionGrammar) : resources;
+        // The session's phrases (1.2.0): listed only when the wording chosen for this session carries some.
+        if (this._sessionGrammar?.hasPhrases())
+            patched.push({
+                uri: GRAMMAR_PHRASES_URI,
+                name: "Phrases",
+                description: "The sentences of this session's wording, by key, holes unfilled",
+                mimeType: "application/json",
+            });
         return Mcp.resourcesListResult(req.id, patched);
     }
 
@@ -484,6 +492,12 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         const uri = params?.uri;
 
         if (!uri) return Mcp.invalidParams(req.id, "Missing required parameter: uri");
+        if (uri === GRAMMAR_PHRASES_URI) {
+            // The phrases of the session's wording, as the grammar resolved at `initialize` carries them; none resolved, none served.
+            if (!this._sessionGrammar?.hasPhrases()) return Mcp.resourceNotFound(req.id, uri);
+            const text = JSON.stringify({ grammar: this._currentGrammarKey, phrases: this._sessionGrammar.getPhrases() });
+            return Mcp.resourcesReadResult(req.id, { uri, mimeType: "application/json", text });
+        }
         const instance = this._resourceIndex.get(uri) ?? this._matchTemplate(uri);
         if (!instance) return Mcp.resourceNotFound(req.id, uri);
         const r = await instance.readResourceAsync(uri);

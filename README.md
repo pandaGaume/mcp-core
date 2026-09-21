@@ -390,6 +390,26 @@ With that, a behavior's code can declare structure only (tool names and schemas,
 - `loadGrammarDirectory(dir, { surface })` (`@cyanmycelium/mcp-core/node`) reads `<dir>/<agent>/<locale>.json`, composes each `<agent>:<locale>` grammar as the family's file laid over `<dir>/default/<locale>.json`, checks every file against the surface it describes (`McpGrammar.check`: a tool, a property, a resource the surface lacks is a problem, named with its file) and returns the grammars, the files with their sha256, and the problems. `builder.withGrammars(loaded.grammars)` registers them at once.
 - `builder.withWordingRule("default:en")` checks at `build()` that every tool and every resource has a description in one place only: inline in the behavior, or in the named grammar, never both, never neither. A text can then not drift between two copies.
 
+### Phrases: the sentences a host says or shows (1.2.0)
+
+A host has words that describe no tool: what a voice says about a task, what a page writes under a step. They belong to the same wording as the tools' words, in the same files, chosen by the same resolver. A grammar therefore carries a `phrases` section: keyed sentences with `{holes}` filled at use.
+
+```json
+{
+    "server": { "description": "The factory's front" },
+    "tools": { "request": { "description": "Ask for what is missing." } },
+    "phrases": {
+        "step.fit": "Model fitted on {rows} rows, rmse {rmse}.",
+        "end.proposed": "Proposed to the station: {proposalId}."
+    }
+}
+```
+
+- `grammar.phrase("step.fit", { rows: 19, rmse: 0.0008 })` fills the holes. A key the grammar lacks comes back as the key itself, so a missing sentence is seen where it should have been read; a hole with no value reads `?`, never an invented value. `fillPhrase` and `phraseHoles` do the same on a bare template.
+- `merge` overlays phrases like the rest (a family file rewords a sentence, never erases one); `toJSON` writes them back.
+- `reference.comparePhrases(other)` lists the keys `other` lacks or adds and the phrases whose holes differ; `loadGrammarDirectory(dir, { referenceLocale: "en" })` runs it for every file: a `default/<locale>` file must carry the reference locale's keys and holes, a family file may reword a subset. A locale that drifts is a named problem, like a tool the surface lacks. `check({ phrases: [...keys the host reads] })` refuses a phrase under a key nobody reads.
+- The server serves a session its phrases: once `initialize` has resolved the session's wording, `resources/list` includes `grammar://phrases` (when that wording carries phrases) and `resources/read` on it returns `{ "grammar": "<key>", "phrases": { ... } }`. A page or a voice reads them through its own MCP session, in the language it announced, and fills them with `McpGrammar.fromJSON({ phrases }).phrase(key, values)`; no second loader, no file served on the side.
+
 ### Runtime mutation by the agent itself
 
 `McpGrammarBehavior` exposes the grammar store as a regular MCP behavior with six tools (`grammar_list`, `grammar_read`, `grammar_set`, `grammar_delete`, `grammar_import`, `grammar_export`). The agent can rewrite its own tool descriptions during a session, and the server emits `notifications/tools/list_changed` so clients re-fetch the updated schemas.
