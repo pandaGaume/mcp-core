@@ -13,6 +13,7 @@ import { McpGrammar } from "../src/mcp.grammar";
 import { McpBehaviorBase } from "../src/mcp.behaviorBase";
 import { McpToolResults } from "../src/mcp.toolResult";
 import { McpServerBuilder } from "../src/server/mcp.server.builder";
+import { McpServer } from "../src/server/mcp.server";
 import { LoopbackTransport } from "../src/server/loopback.transport";
 import { loadGrammarDirectory } from "../src/node/grammar.directory";
 import type { McpResource, McpResourceContent, McpResourceTemplate, McpTool, McpToolResult } from "../src/interfaces";
@@ -97,7 +98,7 @@ describe("the server's words in a grammar", () => {
     });
 
     it("the builder's wording rule: one place, never none, never both", () => {
-        const wordless = () => new McpServerBuilder().withName("ws").withTransport(new LoopbackTransport()).register(new Wordless()).withWordingRule("default:en");
+        const wordless = () => new McpServerBuilder().withName("ws").withTransport(LoopbackTransport.createPair()[0]).register(new Wordless()).withWordingRule("default:en");
         expect(() => wordless().build()).toThrow(/tool "list" has no description/);
         expect(() => wordless().withGrammar("default:en", McpGrammar.fromJSON(EN)).build()).not.toThrow();
         class Worded extends Wordless {
@@ -108,7 +109,7 @@ describe("the server's words in a grammar", () => {
         expect(() =>
             new McpServerBuilder()
                 .withName("ws")
-                .withTransport(new LoopbackTransport())
+                .withTransport(LoopbackTransport.createPair()[0])
                 .register(new Worded())
                 .withGrammar("default:en", McpGrammar.fromJSON(EN))
                 .withWordingRule("default:en")
@@ -119,7 +120,7 @@ describe("the server's words in a grammar", () => {
     it("initialize carries the grammar's server words and the matched key", () => {
         const server = new McpServerBuilder()
             .withName("ws")
-            .withTransport(new LoopbackTransport())
+            .withTransport(LoopbackTransport.createPair()[0])
             .register(new Wordless())
             .withGrammars(
                 new Map([
@@ -129,7 +130,7 @@ describe("the server's words in a grammar", () => {
             )
             .withGrammarResolver((_client, caps) => ((caps as { locale?: string })?.locale === "fr" ? ["default:fr", "default:en"] : ["default:en"]))
             .withWordingRule("default:en")
-            .build();
+            .build() as McpServer;
         const en = server.initialize({
             jsonrpc: "2.0",
             id: 1,
