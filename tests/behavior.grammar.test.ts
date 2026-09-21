@@ -125,7 +125,9 @@ function pingDescription(resp: JsonRpcResponse): string | undefined {
 
 function crewCountDescription(resp: JsonRpcResponse): string | undefined {
     const tools = (resp.result as { tools: McpTool[] }).tools;
-    const schema = tools.find((t) => t.name === "ping")?.inputSchema as { properties?: { crew?: { items?: { properties?: Record<string, { description?: string }> } } } } | undefined;
+    const schema = tools.find((t) => t.name === "ping")?.inputSchema as
+        | { properties?: { crew?: { items?: { properties?: Record<string, { description?: string }> } } } }
+        | undefined;
     return schema?.properties?.crew?.items?.properties?.["count"]?.description;
 }
 

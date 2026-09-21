@@ -385,7 +385,8 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         // The key that was matched travels in `_meta`, so a client can record
         // which wording it was given.
         const words = matchedGrammar;
-        const serverInfo = words?.getServerDescription() && !identity.serverInfo.description ? { ...identity.serverInfo, description: words.getServerDescription() } : identity.serverInfo;
+        const serverInfo =
+            words?.getServerDescription() && !identity.serverInfo.description ? { ...identity.serverInfo, description: words.getServerDescription() } : identity.serverInfo;
         const instructions = identity.instructions ?? words?.getServerInstructions();
         const result: McpInitializeResult = {
             ...identity,

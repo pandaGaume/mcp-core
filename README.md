@@ -373,7 +373,7 @@ For a Claude client requesting locale `fr-CA`, the resolver emits the chain `["c
 
 The fallback narrowing order (`["version", "locale-region", "locale", "agent"]` by default) and key composition are both customizable; see `GrammarResolverOptions` for the full surface.
 
-### The server's words, a directory of files, and the wording rule (1.0.2)
+### The server's words, a directory of files, and the wording rule (1.1.0)
 
 A grammar can carry the server's own words next to its tools': a `server` section with the one-line `description` (used for `serverInfo.description` when the initializer sets none) and the `instructions` a session receives (used when the initializer sets none). The `initialize` result also carries the key of the wording that was matched, in `_meta.grammar`, so a client can record which wording it was given.
 

@@ -39,8 +39,15 @@ class Wordless extends McpBehaviorBase {
     }
 }
 
-const EN = { server: { description: "A task's own files", instructions: "Every path is relative to the task." }, tools: { list: { title: "List", description: "The files of a task.", properties: { taskId: "the task", path: "a folder" } } }, resources: { "ws://writes": { name: "Writes", description: "Every write." } } };
-const FR = { server: { description: "Les fichiers d'une tâche", instructions: "Tout chemin est relatif à la tâche." }, tools: { list: { title: "Lister", description: "Les fichiers d'une tâche." } } };
+const EN = {
+    server: { description: "A task's own files", instructions: "Every path is relative to the task." },
+    tools: { list: { title: "List", description: "The files of a task.", properties: { taskId: "the task", path: "a folder" } } },
+    resources: { "ws://writes": { name: "Writes", description: "Every write." } },
+};
+const FR = {
+    server: { description: "Les fichiers d'une tâche", instructions: "Tout chemin est relatif à la tâche." },
+    tools: { list: { title: "Lister", description: "Les fichiers d'une tâche." } },
+};
 const CLAUDE_EN = { tools: { list: { description: "The files of a task, with their sha256." } } };
 
 describe("the server's words in a grammar", () => {
@@ -64,7 +71,11 @@ describe("the server's words in a grammar", () => {
     it("loads a directory: families overlaid on the baseline of their locale, files with sha256, problems named", () => {
         const dir = mkdtempSync(path.join(tmpdir(), "grammars-"));
         try {
-            for (const [agent, locale, data] of [["default", "en", EN], ["default", "fr", FR], ["claude", "en", CLAUDE_EN]] as const) {
+            for (const [agent, locale, data] of [
+                ["default", "en", EN],
+                ["default", "fr", FR],
+                ["claude", "en", CLAUDE_EN],
+            ] as const) {
                 mkdirSync(path.join(dir, agent), { recursive: true });
                 writeFileSync(path.join(dir, agent, `${locale}.json`), JSON.stringify(data));
             }
@@ -94,7 +105,15 @@ describe("the server's words in a grammar", () => {
                 return [{ ...super.getTools()[0], description: "inline" }];
             }
         }
-        expect(() => new McpServerBuilder().withName("ws").withTransport(new LoopbackTransport()).register(new Worded()).withGrammar("default:en", McpGrammar.fromJSON(EN)).withWordingRule("default:en").build()).toThrow(/both inline and in grammar/);
+        expect(() =>
+            new McpServerBuilder()
+                .withName("ws")
+                .withTransport(new LoopbackTransport())
+                .register(new Worded())
+                .withGrammar("default:en", McpGrammar.fromJSON(EN))
+                .withWordingRule("default:en")
+                .build()
+        ).toThrow(/both inline and in grammar/);
     });
 
     it("initialize carries the grammar's server words and the matched key", () => {
@@ -102,16 +121,31 @@ describe("the server's words in a grammar", () => {
             .withName("ws")
             .withTransport(new LoopbackTransport())
             .register(new Wordless())
-            .withGrammars(new Map([["default:en", McpGrammar.fromJSON(EN)], ["default:fr", McpGrammar.fromJSON(FR)]]))
+            .withGrammars(
+                new Map([
+                    ["default:en", McpGrammar.fromJSON(EN)],
+                    ["default:fr", McpGrammar.fromJSON(FR)],
+                ])
+            )
             .withGrammarResolver((_client, caps) => ((caps as { locale?: string })?.locale === "fr" ? ["default:fr", "default:en"] : ["default:en"]))
             .withWordingRule("default:en")
             .build();
-        const en = server.initialize({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", clientInfo: { name: "test", version: "0" }, capabilities: {} } });
+        const en = server.initialize({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "initialize",
+            params: { protocolVersion: "2025-06-18", clientInfo: { name: "test", version: "0" }, capabilities: {} },
+        });
         const enResult = (en as { result: { serverInfo: { description?: string }; instructions?: string; _meta?: { grammar?: string } } }).result;
         expect(enResult.serverInfo.description).toBe("A task's own files");
         expect(enResult.instructions).toBe("Every path is relative to the task.");
         expect(enResult._meta?.grammar).toBe("default:en");
-        const fr = server.initialize({ jsonrpc: "2.0", id: 2, method: "initialize", params: { protocolVersion: "2025-06-18", clientInfo: { name: "test", version: "0" }, capabilities: { locale: "fr" } } });
+        const fr = server.initialize({
+            jsonrpc: "2.0",
+            id: 2,
+            method: "initialize",
+            params: { protocolVersion: "2025-06-18", clientInfo: { name: "test", version: "0" }, capabilities: { locale: "fr" } },
+        });
         const frResult = (fr as { result: { instructions?: string; _meta?: { grammar?: string } } }).result;
         expect(frResult.instructions).toBe("Tout chemin est relatif à la tâche.");
         expect(frResult._meta?.grammar).toBe("default:fr");

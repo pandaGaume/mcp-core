@@ -168,7 +168,11 @@ export class McpGrammar {
      * with no problem describes only things that exist; the server applies
      * it without surprise.
      */
-    check(surface: { tools?: ReadonlyArray<{ name: string; inputSchema?: unknown }>; resources?: ReadonlyArray<{ uri: string }>; templates?: ReadonlyArray<{ uriTemplate: string }> }): McpGrammarProblem[] {
+    check(surface: {
+        tools?: ReadonlyArray<{ name: string; inputSchema?: unknown }>;
+        resources?: ReadonlyArray<{ uri: string }>;
+        templates?: ReadonlyArray<{ uriTemplate: string }>;
+    }): McpGrammarProblem[] {
         const problems: McpGrammarProblem[] = [];
         const tools = new Map((surface.tools ?? []).map((t) => [t.name, t]));
         for (const [name, entry] of this._tools) {
@@ -179,16 +183,23 @@ export class McpGrammar {
             }
             const paths = new Set(McpGrammar._schemaPaths(tool.inputSchema));
             for (const prop of Object.keys(entry.properties ?? {})) {
-                if (!paths.has(prop)) problems.push({ kind: "property", name: `${name}.${prop}`, message: `tool "${name}" has no property "${prop}" (properties: ${[...paths].join(", ") || "none"})` });
+                if (!paths.has(prop))
+                    problems.push({
+                        kind: "property",
+                        name: `${name}.${prop}`,
+                        message: `tool "${name}" has no property "${prop}" (properties: ${[...paths].join(", ") || "none"})`,
+                    });
             }
         }
         if (surface.resources) {
             const uris = new Set(surface.resources.map((r) => r.uri));
-            for (const uri of this._resources.keys()) if (!uris.has(uri)) problems.push({ kind: "resource", name: uri, message: `resource "${uri}" does not exist on this surface` });
+            for (const uri of this._resources.keys())
+                if (!uris.has(uri)) problems.push({ kind: "resource", name: uri, message: `resource "${uri}" does not exist on this surface` });
         }
         if (surface.templates) {
             const uris = new Set(surface.templates.map((t) => t.uriTemplate));
-            for (const uri of this._templates.keys()) if (!uris.has(uri)) problems.push({ kind: "template", name: uri, message: `template "${uri}" does not exist on this surface` });
+            for (const uri of this._templates.keys())
+                if (!uris.has(uri)) problems.push({ kind: "template", name: uri, message: `template "${uri}" does not exist on this surface` });
         }
         return problems;
     }
