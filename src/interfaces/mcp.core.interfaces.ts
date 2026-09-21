@@ -444,8 +444,15 @@ export interface McpServerIdentity {
     /**
      * Optional human-readable instructions for the client or LLM about
      * how to interact with this server (e.g. usage notes, constraints).
+     * When absent, the session grammar's `server.instructions` is used.
      */
     instructions?: string;
+
+    /**
+     * Result metadata. The server adds `grammar`, the key of the wording
+     * resolved for this session, when one was matched.
+     */
+    _meta?: McpMeta;
 }
 
 /**

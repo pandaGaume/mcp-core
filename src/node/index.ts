@@ -6,3 +6,5 @@ export type { IStreamableHttpEndpointOptions, IMcpSessionHandle, McpServerFactor
 export { HttpSessionTransport } from "./streamable-http.session";
 export { ChildProcessTransport } from "./childprocess.transport";
 export type { IChildProcessTransportOptions, ChildProcessStderr } from "./childprocess.transport";
+export { loadGrammarDirectory } from "./grammar.directory";
+export type { GrammarDirectory, GrammarDirectoryFile, GrammarDirectoryOptions, GrammarDirectorySurface } from "./grammar.directory";

@@ -277,7 +277,7 @@ What a grammar may override, per session:
 
 | Target | Fields | Lookup key |
 |---|---|---|
-| Tool | `title`, `description`, and each `inputSchema` property description (dot-notation for nested objects, e.g. `"patch.position"`) | tool name |
+| Tool | `title`, `description`, and each `inputSchema` property description (dot-notation for nested objects, e.g. `"patch.position"`, and through the `items` of an array of objects, e.g. `"crew.count"`; since 1.0.1) | tool name |
 | Resource | `name`, `title`, `description` | resource `uri` |
 | Resource template | `name`, `title`, `description` | `uriTemplate` |
 
@@ -372,6 +372,23 @@ const server = new McpServerBuilder()
 For a Claude client requesting locale `fr-CA`, the resolver emits the chain `["claude:fr-ca", "claude:fr", "default:fr-ca", "default:fr", "claude:en", "default:en"]`. The server tries each in order and picks the first key for which at least one of the four layers has registered a grammar: so the behavior's `default:fr` matches even when a more specific Canadian-French variant is not shipped.
 
 The fallback narrowing order (`["version", "locale-region", "locale", "agent"]` by default) and key composition are both customizable; see `GrammarResolverOptions` for the full surface.
+
+### The server's words, a directory of files, and the wording rule (1.1.0)
+
+A grammar can carry the server's own words next to its tools': a `server` section with the one-line `description` (used for `serverInfo.description` when the initializer sets none) and the `instructions` a session receives (used when the initializer sets none). The `initialize` result also carries the key of the wording that was matched, in `_meta.grammar`, so a client can record which wording it was given.
+
+```json
+{
+    "server": { "description": "A task's own files", "instructions": "Every path is relative to the task." },
+    "tools": { "list": { "title": "List", "description": "The files of a task.", "properties": { "taskId": "the task" } } },
+    "resources": { "ws://writes": { "name": "Writes", "description": "Every write." } }
+}
+```
+
+With that, a behavior's code can declare structure only (tool names and schemas, resource URIs) and leave every word to grammar files. Two helpers make it a discipline rather than a habit:
+
+- `loadGrammarDirectory(dir, { surface })` (`@cyanmycelium/mcp-core/node`) reads `<dir>/<agent>/<locale>.json`, composes each `<agent>:<locale>` grammar as the family's file laid over `<dir>/default/<locale>.json`, checks every file against the surface it describes (`McpGrammar.check`: a tool, a property, a resource the surface lacks is a problem, named with its file) and returns the grammars, the files with their sha256, and the problems. `builder.withGrammars(loaded.grammars)` registers them at once.
+- `builder.withWordingRule("default:en")` checks at `build()` that every tool and every resource has a description in one place only: inline in the behavior, or in the named grammar, never both, never neither. A text can then not drift between two copies.
 
 ### Runtime mutation by the agent itself
 

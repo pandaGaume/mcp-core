@@ -61,6 +61,10 @@ class TestBehavior extends McpBehavior {
                     type: "object",
                     properties: {
                         msg: { type: "string", description: "Inline EN msg description" },
+                        crew: {
+                            type: "array",
+                            items: { type: "object", properties: { count: { type: "number", description: "Inline EN count description" } } },
+                        },
                     },
                     additionalProperties: false,
                 },
@@ -117,6 +121,14 @@ function toolsListRequest(): JsonRpcRequest {
 function pingDescription(resp: JsonRpcResponse): string | undefined {
     const tools = (resp.result as { tools: McpTool[] }).tools;
     return tools.find((t) => t.name === "ping")?.description;
+}
+
+function crewCountDescription(resp: JsonRpcResponse): string | undefined {
+    const tools = (resp.result as { tools: McpTool[] }).tools;
+    const schema = tools.find((t) => t.name === "ping")?.inputSchema as
+        | { properties?: { crew?: { items?: { properties?: Record<string, { description?: string }> } } } }
+        | undefined;
+    return schema?.properties?.crew?.items?.properties?.["count"]?.description;
 }
 
 function msgDescription(resp: JsonRpcResponse): string | undefined {
@@ -225,6 +237,17 @@ describe("McpServer.initialize, four-layer grammar merge", () => {
 
         server.initialize(initRequest());
         expect(pingDescription(server.toolsList(toolsListRequest()))).toBe("store FR");
+    });
+
+    it("patches a field inside the items of an array of objects (dot notation through `items`)", () => {
+        const fr = McpGrammar.fromJSON({ tools: { ping: { properties: { "crew.count": "nombre de personnes" } } } });
+        const behavior = new TestBehavior(new StubAdapter("test"), new Map([["default:fr", fr]]));
+        const server = makeServer({ behavior, resolver: makeChainResolver(["default:fr"]) });
+
+        server.initialize(initRequest());
+        const list = server.toolsList(toolsListRequest());
+        expect(crewCountDescription(list)).toBe("nombre de personnes");
+        expect(msgDescription(list)).toBe("Inline EN msg description");
     });
 
     it("falls back to inline EN baseline when no layer matches the chain", () => {

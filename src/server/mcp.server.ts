@@ -380,7 +380,22 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         this._currentGrammarKey = matchedKey;
         this._sessionGrammar = matchedGrammar;
 
-        const result: McpInitializeResult = { ...identity, protocolVersion: this._protocolVersion, capabilities: this._deriveCapabilities() };
+        // The session grammar may carry the server's own words: they fill what
+        // the initializer left empty, so one wording covers the whole session.
+        // The key that was matched travels in `_meta`, so a client can record
+        // which wording it was given.
+        const words = matchedGrammar;
+        const serverInfo =
+            words?.getServerDescription() && !identity.serverInfo.description ? { ...identity.serverInfo, description: words.getServerDescription() } : identity.serverInfo;
+        const instructions = identity.instructions ?? words?.getServerInstructions();
+        const result: McpInitializeResult = {
+            ...identity,
+            serverInfo,
+            ...(instructions !== undefined ? { instructions } : {}),
+            protocolVersion: this._protocolVersion,
+            capabilities: this._deriveCapabilities(),
+            ...(matchedKey !== undefined ? { _meta: { ...(identity._meta ?? {}), grammar: matchedKey } } : {}),
+        };
 
         return Mcp.initializeResult(req.id, result);
     }
@@ -626,7 +641,8 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     }
 
     /**
-     * Recursively patches property descriptions in a JSON schema object.
+     * Recursively patches property descriptions in a JSON schema object,
+     * through nested objects and through the `items` of arrays of objects.
      * Returns the original schema reference when no patches are needed,
      * or a shallow copy with patched `description` fields.
      */
@@ -656,6 +672,17 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
                 const nested = this._patchProperties(toolName, prop, grammar, qualifiedKey);
                 if (nested !== prop) {
                     prop = nested;
+                    patched = true;
+                }
+            }
+
+            // Recurse into the items of an array of objects: `crew.count`
+            // addresses `crew.items.properties.count`, so a grammar names a
+            // field the same way whether its parent is an object or a list.
+            if (prop.items?.properties) {
+                const items = this._patchProperties(toolName, prop.items, grammar, qualifiedKey);
+                if (items !== prop.items) {
+                    prop = { ...prop, items };
                     patched = true;
                 }
             }
