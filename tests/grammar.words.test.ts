@@ -214,6 +214,10 @@ describe("the phrases of a wording", () => {
             expect(loaded.grammars.get("claude:en")!.phrase("step.fit", { rows: 3, rmse: 0 })).toBe("Model fitted on 3 rows, rmse 0.");
             expect(() => loadGrammarDirectory(dir, { referenceLocale: "en" })).toThrow(/step\.fit/);
             expect(loadGrammarDirectory(dir, { referenceLocale: "de", tolerate: true }).problems[0]).toMatch(/no default\/de\.json/);
+            // Files with no phrase at all (inline words, or tools' words only) need no reference file.
+            for (const locale of ["en", "fr"]) writeFileSync(path.join(dir, "default", `${locale}.json`), JSON.stringify(locale === "en" ? EN : FR));
+            rmSync(path.join(dir, "claude"), { recursive: true, force: true });
+            expect(loadGrammarDirectory(dir, { referenceLocale: "de", tolerate: true }).problems).toEqual([]);
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }

@@ -15,7 +15,8 @@
  * problem, listed with its file, and `loadGrammarDirectory` throws unless
  * told to keep going. With a `referenceLocale`, the phrases of every
  * `default/<locale>` file must match that locale's (same keys, same holes),
- * and a family file may only reword phrases the reference has.
+ * and a family file may only reword phrases the reference has; a directory
+ * whose files carry no phrase is not asked for a reference file.
  *
  * Node only (it reads the file system): `@cyanmycelium/mcp-core/node`.
  */
@@ -89,7 +90,8 @@ export function loadGrammarDirectory(dir: string, options: GrammarDirectoryOptio
             }
         }
     }
-    if (options.referenceLocale) {
+    // A directory whose files carry no phrase has nothing to compare: the reference is required only once a file has some.
+    if (options.referenceLocale && [...raw.values()].some((r) => r.grammar.hasPhrases())) {
         const reference = raw.get(`${baseline}:${options.referenceLocale.toLowerCase()}`)?.grammar;
         if (!reference) problems.push(`${dir}: no ${baseline}/${options.referenceLocale}.json to take the phrases from`);
         else
