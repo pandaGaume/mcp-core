@@ -1,5 +1,5 @@
 import type { IMcpServerHandlers, McpClientCapabilities, McpClientInfo, McpServerIdentity } from "./mcp.core.interfaces";
-import type { IMcpBehavior } from "./mcp.behavior.interfaces";
+import type { IMcpBehavior, McpLoggingLevel } from "./mcp.behavior.interfaces";
 import type { IEventSource } from "./eventSource";
 import type { IMessageTransport } from "./mcp.transport.interfaces";
 import type { McpGrammar } from "../mcp.grammar";
@@ -96,6 +96,14 @@ export interface IMcpServerOptions {
      * Omit to disable idle detection.
      */
     idleTimeoutMs?: number;
+
+    /**
+     * Advertises the `logging` capability, answers `logging/setLevel`, and lets
+     * {@link IMcpServer.log} emit `notifications/message`. Off by default: the
+     * spec requires a server that emits log notifications to declare the
+     * capability, and one that does not emit any must not claim it.
+     */
+    logging?: boolean;
 }
 
 /**
@@ -247,6 +255,30 @@ export interface IMcpServer {
     register(...behavior: IMcpBehavior[]): IMcpServer;
 
     unregister(...behavior: IMcpBehavior[]): IMcpServer;
+
+    /**
+     * Sends `notifications/resources/updated` for `uri`, **only** when the
+     * current session subscribed to that exact URI. Returns whether it was sent.
+     *
+     * Behaviors normally do not call this: raising
+     * {@link IMcpBehavior.onResourceUpdated} reaches it. It exists for content
+     * the server serves without a behavior owning the change. Optional, for the
+     * same source-compatibility reason as {@link onTransportError}.
+     */
+    notifyResourceUpdated?(uri: string): boolean;
+
+    /** Sends `notifications/resources/list_changed` to an initialized session. */
+    notifyResourcesListChanged?(): void;
+
+    /** Sends `notifications/prompts/list_changed` to an initialized session. */
+    notifyPromptsListChanged?(): void;
+
+    /**
+     * Emits `notifications/message` when logging is enabled
+     * ({@link IMcpServerOptions.logging}) and `level` is at or above the level
+     * the client set. Returns whether it was sent.
+     */
+    log?(level: McpLoggingLevel, data: unknown, logger?: string): boolean;
 }
 
 /**

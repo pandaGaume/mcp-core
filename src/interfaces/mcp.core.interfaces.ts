@@ -485,6 +485,12 @@ export interface McpInitializeResult extends McpServerIdentity {
  * - `toolsList`               → `tools/list`
  * - `toolsCall`               → `tools/call`
  * - `ping`                    → `ping`
+ * - `resourcesSubscribe`      → `resources/subscribe`
+ * - `resourcesUnsubscribe`    → `resources/unsubscribe`
+ * - `promptsList`             → `prompts/list`
+ * - `promptsGetAsync`         → `prompts/get`
+ * - `completionCompleteAsync` → `completion/complete`
+ * - `loggingSetLevel`         → `logging/setLevel`
  *
  * Aggregates results across all registered {@link IMcpBehavior}s and their instances.
  */
@@ -503,4 +509,21 @@ export interface IMcpServerHandlers {
      * bookkeeping).
      */
     ping?(req: JsonRpcRequest): JsonRpcResponse;
+
+    // The handlers below are optional for the same reason: a custom handler
+    // written before they existed leaves them out, and the server then answers
+    // with its own implementation instead of `-32601`.
+
+    /** Answers `resources/subscribe`. */
+    resourcesSubscribe?(req: JsonRpcRequest): JsonRpcResponse;
+    /** Answers `resources/unsubscribe`. */
+    resourcesUnsubscribe?(req: JsonRpcRequest): JsonRpcResponse;
+    /** Answers `prompts/list`. */
+    promptsList?(req: JsonRpcRequest): JsonRpcResponse;
+    /** Answers `prompts/get`. */
+    promptsGetAsync?(req: JsonRpcRequest): Promise<JsonRpcResponse>;
+    /** Answers `completion/complete`. */
+    completionCompleteAsync?(req: JsonRpcRequest): Promise<JsonRpcResponse>;
+    /** Answers `logging/setLevel`. */
+    loggingSetLevel?(req: JsonRpcRequest): JsonRpcResponse;
 }

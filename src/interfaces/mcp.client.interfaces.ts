@@ -1,6 +1,6 @@
 import type { IEventSource } from "./eventSource";
 import type { McpInitializeResult, McpResource, McpResourceContent, McpResourceTemplate, McpServerInfo, McpTool } from "./mcp.core.interfaces";
-import type { McpToolResult } from "./mcp.behavior.interfaces";
+import type { McpCompletion, McpCompletionArgument, McpCompletionReference, McpLoggingLevel, McpPrompt, McpPromptResult, McpToolResult } from "./mcp.behavior.interfaces";
 
 /**
  * Minimalist MCP client that connects to an MCP server via any {@link IMessageTransport}.
@@ -83,4 +83,31 @@ export interface IMcpClient {
 
     /** Emitted when the server sends `notifications/tools/list_changed`. */
     onToolsChanged: IEventSource<void> | null;
+
+    // The members below are optional so an existing implementation of this
+    // interface keeps compiling. `McpClient` provides all of them.
+
+    /** Calls `resources/subscribe`; updates then arrive on {@link onResourceUpdated}. */
+    subscribeResource?(uri: string): Promise<void>;
+
+    /** Calls `resources/unsubscribe`. */
+    unsubscribeResource?(uri: string): Promise<void>;
+
+    /** Emitted with the URI of each `notifications/resources/updated`. */
+    readonly onResourceUpdated?: IEventSource<string>;
+
+    /** Calls `prompts/list`, draining every page. */
+    listPrompts?(): Promise<McpPrompt[]>;
+
+    /** Calls `prompts/get`. */
+    getPrompt?(name: string, args?: Record<string, string>): Promise<McpPromptResult>;
+
+    /** Emitted when the server sends `notifications/prompts/list_changed`. */
+    readonly onPromptsChanged?: IEventSource<void>;
+
+    /** Calls `completion/complete`. */
+    complete?(ref: McpCompletionReference, argument: McpCompletionArgument, context?: { arguments?: Record<string, string> }): Promise<McpCompletion>;
+
+    /** Calls `logging/setLevel`. */
+    setLoggingLevel?(level: McpLoggingLevel): Promise<void>;
 }

@@ -3,7 +3,13 @@ import type {
     IMcpClient,
     IMessageTransport,
     McpClientInfo,
+    McpCompletion,
+    McpCompletionArgument,
+    McpCompletionReference,
     McpInitializeResult,
+    McpLoggingLevel,
+    McpPrompt,
+    McpPromptResult,
     McpResource,
     McpResourceContent,
     McpResourceTemplate,
@@ -58,6 +64,8 @@ export class McpClient implements IMcpClient {
 
     private _onResourcesChanged?: IEventEmitter<void>;
     private _onToolsChanged?: IEventEmitter<void>;
+    private _onPromptsChanged?: IEventEmitter<void>;
+    private _onResourceUpdated?: IEventEmitter<string>;
 
     /**
      * @param clientInfo Identity sent to the server during the `initialize` handshake.
@@ -100,6 +108,18 @@ export class McpClient implements IMcpClient {
             this._onToolsChanged = createEventEmitter<void>();
         }
         return this._onToolsChanged;
+    }
+
+    /** Emitted with the URI of each `notifications/resources/updated` the server sends. */
+    public get onResourceUpdated(): IEventSource<string> {
+        if (!this._onResourceUpdated) this._onResourceUpdated = createEventEmitter<string>();
+        return this._onResourceUpdated;
+    }
+
+    /** Emitted when the server sends `notifications/prompts/list_changed`. */
+    public get onPromptsChanged(): IEventSource<void> {
+        if (!this._onPromptsChanged) this._onPromptsChanged = createEventEmitter<void>();
+        return this._onPromptsChanged;
     }
 
     // ── Lifecycle ────────────────────────────────────────────────────────
@@ -183,6 +203,10 @@ export class McpClient implements IMcpClient {
         this._onResourcesChanged = undefined;
         this._onToolsChanged?.clear();
         this._onToolsChanged = undefined;
+        this._onPromptsChanged?.clear();
+        this._onPromptsChanged = undefined;
+        this._onResourceUpdated?.clear();
+        this._onResourceUpdated = undefined;
     }
 
     // ── Resources ────────────────────────────────────────────────────────
@@ -198,6 +222,37 @@ export class McpClient implements IMcpClient {
     public async readResource(uri: string): Promise<McpResourceContent> {
         const r = await this._request("resources/read", { uri });
         return (r as { contents: McpResourceContent[] }).contents[0];
+    }
+
+    /** Calls `resources/subscribe`; updates then arrive on {@link onResourceUpdated}. */
+    public async subscribeResource(uri: string): Promise<void> {
+        await this._request("resources/subscribe", { uri });
+    }
+
+    /** Calls `resources/unsubscribe`. */
+    public async unsubscribeResource(uri: string): Promise<void> {
+        await this._request("resources/unsubscribe", { uri });
+    }
+
+    // ── Prompts ──────────────────────────────────────────────────────────
+
+    public listPrompts(): Promise<McpPrompt[]> {
+        return this._listAll<McpPrompt>("prompts/list", "prompts");
+    }
+
+    public async getPrompt(name: string, args: Record<string, string> = {}): Promise<McpPromptResult> {
+        return (await this._request("prompts/get", { name, arguments: args })) as McpPromptResult;
+    }
+
+    // ── Completion and logging ───────────────────────────────────────────
+
+    public async complete(ref: McpCompletionReference, argument: McpCompletionArgument, context?: { arguments?: Record<string, string> }): Promise<McpCompletion> {
+        const r = await this._request("completion/complete", context ? { ref, argument, context } : { ref, argument });
+        return (r as { completion: McpCompletion }).completion;
+    }
+
+    public async setLoggingLevel(level: McpLoggingLevel): Promise<void> {
+        await this._request("logging/setLevel", { level });
     }
 
     // ── Tools ────────────────────────────────────────────────────────────
@@ -267,7 +322,7 @@ export class McpClient implements IMcpClient {
     }
 
     private _onMessage(data: string): void {
-        let msg: { id?: number; result?: unknown; error?: { code: number; message: string; data?: unknown }; method?: string };
+        let msg: { id?: number; result?: unknown; error?: { code: number; message: string; data?: unknown }; method?: string; params?: { uri?: unknown } };
         try {
             msg = JSON.parse(data);
         } catch {
@@ -305,6 +360,12 @@ export class McpClient implements IMcpClient {
                     break;
                 case "notifications/tools/list_changed":
                     this._onToolsChanged?.emit();
+                    break;
+                case "notifications/prompts/list_changed":
+                    this._onPromptsChanged?.emit();
+                    break;
+                case "notifications/resources/updated":
+                    if (typeof msg.params?.uri === "string") this._onResourceUpdated?.emit(msg.params.uri);
                     break;
             }
         }

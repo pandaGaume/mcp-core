@@ -175,7 +175,7 @@ Claude truncates a tool result at roughly 150,000 characters on Claude.ai and De
 
 Claude.ai and Desktop give up on a tool call after 300 seconds. Claude Code makes that configurable through `MCP_TOOL_TIMEOUT`.
 
-Claude does not yet support resource subscriptions or sampling, so a design that depends on the server pushing resource updates will not work there. Notifications that the tool or resource *list* changed do work, and this package sends them.
+Claude does not yet support resource subscriptions or sampling, so a design that depends on the server pushing resource updates will not work there. Notifications that the tool or resource *list* changed do work, and this package sends them. It also implements `resources/subscribe` (1.3.0) for the clients that do use it, so a server that reports its changes is ready when a host starts subscribing.
 
 ---
 

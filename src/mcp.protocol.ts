@@ -59,3 +59,75 @@ export function negotiateProtocolVersion(requested: string | undefined, supporte
     if (isProtocolVersionSupported(requested, supported)) return requested as string;
     return supported[0] ?? MCP_LATEST_PROTOCOL_VERSION;
 }
+
+/**
+ * Every request a client may send to a server, per revision, newest first.
+ *
+ * This is the checklist the server is held to: `tests/spec.coverage.test.ts`
+ * sends each one and fails on a `-32601` unless the method is listed in
+ * {@link MCP_SERVER_UNSUPPORTED_METHODS} with a reason. A method the spec adds
+ * therefore cannot go missing silently again, the way `resources/subscribe`
+ * and `prompts/*` did.
+ *
+ * Methods only a client answers (`sampling/createMessage`, `roots/list`,
+ * `elicitation/create`) are not listed: a server never receives them.
+ */
+export const MCP_SERVER_REQUEST_METHODS: Readonly<Record<string, readonly string[]>> = {
+    "2024-11-05": [
+        "initialize",
+        "ping",
+        "resources/list",
+        "resources/templates/list",
+        "resources/read",
+        "resources/subscribe",
+        "resources/unsubscribe",
+        "prompts/list",
+        "prompts/get",
+        "tools/list",
+        "tools/call",
+        "completion/complete",
+        "logging/setLevel",
+    ],
+    "2025-03-26": [],
+    "2025-06-18": [],
+    // Tasks are experimental in 2025-11-25.
+    "2025-11-25": ["tasks/get", "tasks/result", "tasks/list", "tasks/cancel"],
+};
+
+/**
+ * Notifications a client may send to a server. A server never answers a
+ * notification, so "handled" means "not answered": the coverage test checks
+ * that nothing, not even an error, goes back.
+ */
+export const MCP_SERVER_NOTIFICATION_METHODS: readonly string[] = [
+    "notifications/initialized",
+    "notifications/cancelled",
+    "notifications/progress",
+    "notifications/roots/list_changed",
+    "notifications/tasks/status",
+];
+
+/**
+ * Request methods this package deliberately answers with `-32601`, each with
+ * the reason. Empty the entry when the method is implemented; the coverage
+ * test fails if an entry here turns out to be handled after all.
+ */
+export const MCP_SERVER_UNSUPPORTED_METHODS: Readonly<Record<string, string>> = {
+    "tasks/get": "task-augmented requests (experimental in 2025-11-25) are not implemented; the server never advertises `tasks`",
+    "tasks/result": "see tasks/get",
+    "tasks/list": "see tasks/get",
+    "tasks/cancel": "see tasks/get",
+};
+
+/**
+ * The request methods a client may send under `revision`: every method
+ * introduced by that revision or an earlier one.
+ */
+export function serverRequestMethodsFor(revision: string = MCP_LATEST_PROTOCOL_VERSION): string[] {
+    const out: string[] = [];
+    // The table is keyed oldest first by date, which sorts lexically.
+    for (const [introducedIn, methods] of Object.entries(MCP_SERVER_REQUEST_METHODS).sort(([a], [b]) => a.localeCompare(b))) {
+        if (introducedIn <= revision) out.push(...methods);
+    }
+    return out;
+}

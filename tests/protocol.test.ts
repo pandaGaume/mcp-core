@@ -194,12 +194,12 @@ describe("McpServer capabilities", () => {
 
     it("does not advertise tools for a resources-only behavior", () => {
         const caps = capsOf(new StubBehavior("r", [someResource], []));
-        expect(caps).toEqual({ resources: { listChanged: true } });
+        expect(caps).toEqual({ resources: { subscribe: true, listChanged: true } });
     });
 
     it("advertises both when both are present", () => {
         const caps = capsOf(new StubBehavior("b", [someResource], [echoTool]));
-        expect(caps).toEqual({ resources: { listChanged: true }, tools: { listChanged: true } });
+        expect(caps).toEqual({ resources: { subscribe: true, listChanged: true }, tools: { listChanged: true } });
     });
 });
 

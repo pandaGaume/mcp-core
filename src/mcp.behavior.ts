@@ -36,9 +36,46 @@ export abstract class McpBehavior extends McpBehaviorBase {
      */
     private _onGrammarsChanged?: IEventEmitter<void>;
 
+    /** Emitter behind {@link onResourceUpdated}. Created on first access. */
+    private _onResourceUpdated?: IEventEmitter<string>;
+
+    /** Emitter behind {@link onResourcesListChanged}. Created on first access. */
+    private _onResourcesListChanged?: IEventEmitter<void>;
+
     public constructor(adapter: IMcpBehaviorAdapter, options: McpBehaviorOptions) {
         super(options);
         this._adapter = adapter;
+
+        // The adapter has always announced its changes; until these two
+        // subscriptions nothing listened, so a changed resource kept serving
+        // its cached content and no client was ever told. Forwarding here is
+        // what lets the server emit `notifications/resources/updated`.
+        adapter.onResourceContentChanged?.subscribe((uri) => {
+            this._resourceContentCache.delete(uri);
+            this._onResourceUpdated?.emit(uri);
+        });
+        adapter.onResourcesChanged?.subscribe(() => {
+            this._resourceCache = undefined;
+            this._resourceTemplateCache = undefined;
+            this._resourceContentCache.clear();
+            this._onResourcesListChanged?.emit();
+        });
+    }
+
+    /**
+     * Fires with a resource URI when the adapter reports that its content
+     * changed. The cached content for that URI is dropped first, so a read made
+     * in response returns the new state.
+     */
+    public get onResourceUpdated(): IEventSource<string> {
+        if (!this._onResourceUpdated) this._onResourceUpdated = createEventEmitter<string>();
+        return this._onResourceUpdated;
+    }
+
+    /** Fires when the adapter reports that the set of resources changed. */
+    public get onResourcesListChanged(): IEventSource<void> {
+        if (!this._onResourcesListChanged) this._onResourcesListChanged = createEventEmitter<void>();
+        return this._onResourcesListChanged;
     }
 
     protected get adapter(): IMcpBehaviorAdapter {
