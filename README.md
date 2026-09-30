@@ -6,6 +6,8 @@
 
 Engine-neutral primitives for building [Model Context Protocol](https://modelcontextprotocol.io/) servers and clients in TypeScript.
 
+**Coding agent?** Read [AGENTS.md](AGENTS.md) first: the whole integration on one page, with the failure modes that stay silent.
+
 ---
 
 ## Why this package
@@ -116,17 +118,22 @@ Revisions accepted during the handshake: `2025-11-25` (default), `2025-06-18`, `
 | `initialize`, version negotiation, `notifications/initialized` | yes |
 | `tools/list`, `tools/call`, `notifications/tools/list_changed` | yes |
 | `resources/list`, `resources/templates/list`, `resources/read`, `notifications/resources/list_changed` | yes |
+| `resources/subscribe`, `resources/unsubscribe`, `notifications/resources/updated` | yes (1.3.0) |
+| `prompts/list`, `prompts/get`, `notifications/prompts/list_changed` | yes (1.3.0) |
+| `completion/complete` | yes (1.3.0) |
+| `logging/setLevel`, `notifications/message` | yes (1.3.0), opt-in with `withOptions({ logging: true })` |
 | `structuredContent` and `outputSchema` on tools | yes |
 | `title`, `icons`, `annotations`, `_meta` on tools, resources and templates | yes |
 | Binary resources (`blob`), `audio` and `resource_link` content blocks | yes |
 | `ping` (both directions) | yes |
 | Pagination (`cursor` / `nextCursor`) | client follows it; server returns single pages |
-| Prompts, resource subscriptions, logging, completion | not yet |
 | Progress, cancellation, sampling, roots, elicitation, tasks | not yet |
 | Transports | stdio and Streamable HTTP, both roles each, plus loopback |
 | Streamable HTTP: sessions, `MCP-Protocol-Version`, SSE resumption, `DELETE` teardown | yes |
 | OAuth 2.1 resource server: RFC 9728 metadata, `WWW-Authenticate` challenges, audience-bound tokens, 401/403 | yes, server side |
 | OAuth client flow: metadata discovery, PKCE, `resource` parameter, step-up | not yet: supply a token via `IStreamableHttpTransportOptions.headers` |
+
+Every request a client may send is listed per revision in `MCP_SERVER_REQUEST_METHODS`, and `tests/spec.coverage.test.ts` sends each one to a server: a `-32601` fails the build unless the method is declared in `MCP_SERVER_UNSUPPORTED_METHODS` with a reason (today only the experimental `tasks/*`). That test is what was missing when subscriptions, prompts, completion and logging all answered `-32601` for five revisions.
 
 Tool execution failures come back as `isError: true` results rather than JSON-RPC errors, which is what the spec asks for so the model can self-correct. Protocol errors stay protocol errors: an unknown tool is `-32602`, an unknown resource `-32002`, a JSON-RPC batch `-32600` (batching was removed from MCP in `2025-06-18`).
 
@@ -453,6 +460,36 @@ class CameraAdapter extends McpAdapterBase {
 ```
 
 The client never sees tools it cannot actually call. No error spam.
+
+## Change notifications, prompts, completion, logging (1.3.0)
+
+**Resource subscriptions.** The server advertises `resources: { subscribe: true, listChanged: true }` as soon as a behavior exposes a resource or a template, and answers `resources/subscribe` / `resources/unsubscribe` itself: it keeps the set of URIs the session subscribed to, matched exactly, and forgets it on disconnect. Subscribing to a URI nothing can read is `-32002`; unsubscribing is always a success.
+
+A behavior never sends a notification; it reports a change, and the server decides who hears it. With an adapter, that is the event it has always had:
+
+```ts
+class GaugeAdapter extends McpAdapterBase {
+    set(value: number): void {
+        this._value = value;
+        this._forwardResourceContentChanged("plant://gauge"); // notifications/resources/updated, to a subscribed session only
+    }
+    reshape(): void {
+        this._forwardResourceChanged(); // re-index + notifications/resources/list_changed
+    }
+}
+```
+
+`McpBehavior` forwards both as `onResourceUpdated` / `onResourcesListChanged`, and drops its cached copy of the changed content first, so the read that follows is fresh. Before 1.3.0 the adapter raised these events and nothing listened. A behavior written from scratch implements the same two optional event sources, plus `onPromptsChanged`. Content the server serves without a behavior can be announced with `server.notifyResourceUpdated(uri)`, which returns whether anything was sent.
+
+On the client: `client.onResourceUpdated.subscribe(uri => ...)`, then `await client.subscribeResource(uri)`.
+
+**Prompts.** A behavior contributes `getPrompts()` and `getPromptAsync(name, args)`; the server advertises `prompts` only when one of them has some. Unknown names, missing required arguments and non-string argument values are `-32602`.
+
+**Completion.** A behavior with `completeAsync(ref, argument, context)` makes the server advertise `completions`. A `ref/prompt` goes to the behavior listing that prompt, a `ref/resource` to the one declaring that `uriTemplate`; answers are capped at 100 values with `total` and `hasMore` set.
+
+**Logging.** Off by default, since a server that advertises `logging` promises to emit it. With `withOptions({ logging: true })` the server advertises it, answers `logging/setLevel`, and `server.log(level, data, logger?)` emits `notifications/message` at or above the level the client set (`info` until it sets one).
+
+A custom `IMcpServerHandlers` written before 1.3.0 keeps working: the handlers for these methods are optional, and the server falls back to its own.
 
 ## URI templates (RFC 6570)
 

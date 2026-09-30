@@ -29,7 +29,9 @@
         "dist",
         "src",
         "LICENSE",
-        "README.md"
+        "README.md",
+        "HOWTO.md",
+        "AGENTS.md"
     ],
     "main": "./dist/index.js",
     "module": "./dist/index.js",

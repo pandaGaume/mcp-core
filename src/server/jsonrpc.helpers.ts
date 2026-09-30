@@ -2,7 +2,11 @@ import type {
     JsonRpcError,
     JsonRpcNotification,
     JsonRpcResponse,
+    McpCompletion,
     McpInitializeResult,
+    McpLoggingLevel,
+    McpPrompt,
+    McpPromptResult,
     McpResource,
     McpResourceContent,
     McpResourceTemplate,
@@ -140,7 +144,35 @@ export const Mcp = {
             isError: result.isError ?? false,
         }),
 
+    /**
+     * Wraps the empty result `resources/subscribe`, `resources/unsubscribe` and
+     * `logging/setLevel` answer with.
+     */
+    emptyResult: (id: string | number): JsonRpcResponse => jsonRpcOk(id, {}),
+
+    /** Wraps a `prompts/list` result. */
+    promptsListResult: (id: string | number, prompts: McpPrompt[]): JsonRpcResponse => jsonRpcOk(id, { prompts }),
+
+    /** Wraps a `prompts/get` result. */
+    promptsGetResult: (id: string | number, result: McpPromptResult): JsonRpcResponse => jsonRpcOk(id, result),
+
+    /** Wraps a `completion/complete` result. */
+    completionResult: (id: string | number, completion: McpCompletion): JsonRpcResponse => jsonRpcOk(id, { completion }),
+
     // ── Server-sent notifications ─────────────────────────────────────────────
+
+    /** Tells a subscribed client the content at `uri` changed (`notifications/resources/updated`). */
+    resourceUpdated: (uri: string): JsonRpcNotification => ({ jsonrpc: "2.0", method: "notifications/resources/updated", params: { uri } }),
+
+    /** Notifies the client that the prompt list has changed (`notifications/prompts/list_changed`). */
+    promptsListChanged: (): JsonRpcNotification => ({ jsonrpc: "2.0", method: "notifications/prompts/list_changed" }),
+
+    /** One log entry (`notifications/message`). */
+    logMessage: (level: McpLoggingLevel, data: unknown, logger?: string): JsonRpcNotification => ({
+        jsonrpc: "2.0",
+        method: "notifications/message",
+        params: logger !== undefined ? { level, logger, data } : { level, data },
+    }),
 
     /** Notifies the client that the resource list has changed (`notifications/resources/list_changed`). */
     resourcesListChanged: (): JsonRpcNotification => ({ jsonrpc: "2.0", method: "notifications/resources/list_changed" }),

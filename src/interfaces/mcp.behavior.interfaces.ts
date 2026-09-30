@@ -1,6 +1,6 @@
 import { IEventSource } from "./eventSource";
 import type { McpGrammar } from "../mcp.grammar";
-import { McpAnnotations, McpBaseMetadata, McpIcon, McpMeta, McpResource, McpResourceContent, McpResourceTemplate, McpTool } from "./mcp.core.interfaces";
+import type { McpAnnotations, McpBaseMetadata, McpIcon, McpMeta, McpResource, McpResourceContent, McpResourceTemplate, McpTool } from "./mcp.core.interfaces";
 
 // ── Tool Support ─────────────────────────────────────────────────────────────
 
@@ -95,6 +95,67 @@ export interface McpEmbeddedResourceContent extends McpContentBlockBase {
 }
 
 export type McpToolResultContent = McpTextContent | McpImageContent | McpAudioContent | McpResourceLinkContent | McpEmbeddedResourceContent;
+
+// ── Prompts ──────────────────────────────────────────────────────────────────
+
+/** One argument a prompt template accepts. Values always travel as strings. */
+export interface McpPromptArgument extends McpBaseMetadata {
+    description?: string;
+    /** When `true`, `prompts/get` without this argument is refused with `-32602`. */
+    required?: boolean;
+}
+
+/** A prompt template, as `prompts/list` advertises it. */
+export interface McpPrompt extends McpBaseMetadata {
+    description?: string;
+    arguments?: McpPromptArgument[];
+    icons?: McpIcon[];
+    _meta?: McpMeta;
+}
+
+/** One message of an expanded prompt. */
+export interface McpPromptMessage {
+    role: "user" | "assistant";
+    content: McpToolResultContent;
+}
+
+/** What `prompts/get` returns: the prompt expanded with the caller's arguments. */
+export interface McpPromptResult {
+    description?: string;
+    messages: McpPromptMessage[];
+    _meta?: McpMeta;
+}
+
+// ── Completion ───────────────────────────────────────────────────────────────
+
+/**
+ * What a `completion/complete` request completes an argument of: a prompt, by
+ * name, or a resource template, by its `uriTemplate` string.
+ */
+export type McpCompletionReference = { type: "ref/prompt"; name: string } | { type: "ref/resource"; uri: string };
+
+/** The argument being typed, and what has been typed so far. */
+export interface McpCompletionArgument {
+    name: string;
+    value: string;
+}
+
+/** Suggestions for one argument. The server caps `values` at 100 entries. */
+export interface McpCompletion {
+    values: string[];
+    /** Total number of matches, when known and larger than `values`. */
+    total?: number;
+    /** `true` when more matches exist than were returned. */
+    hasMore?: boolean;
+}
+
+// ── Logging ──────────────────────────────────────────────────────────────────
+
+/** RFC 5424 severities, least to most severe, as `logging/setLevel` accepts them. */
+export const MCP_LOGGING_LEVELS = ["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"] as const;
+
+/** One of {@link MCP_LOGGING_LEVELS}. */
+export type McpLoggingLevel = (typeof MCP_LOGGING_LEVELS)[number];
 
 /**
  * Shared runtime contract for both behaviors and adapters.
@@ -288,6 +349,43 @@ export interface IMcpBehavior extends IMcpRuntimeOperations, IMcpDesignOperation
      * `notifications/tools/list_changed`.
      */
     onGrammarsChanged?: IEventSource<void>;
+
+    // ── Change events ────────────────────────────────────────────────────────
+
+    /**
+     * Fires with a resource URI whenever that resource's content changed. The
+     * server forwards it as `notifications/resources/updated`, and only to a
+     * session that subscribed to that exact URI.
+     */
+    onResourceUpdated?: IEventSource<string>;
+
+    /**
+     * Fires when the set of resources or templates this behavior exposes
+     * changed. The server re-indexes and emits
+     * `notifications/resources/list_changed`.
+     */
+    onResourcesListChanged?: IEventSource<void>;
+
+    /** Fires when {@link getPrompts} would now answer differently (`notifications/prompts/list_changed`). */
+    onPromptsChanged?: IEventSource<void>;
+
+    // ── Prompts and completion ───────────────────────────────────────────────
+
+    /** Prompt templates this behavior contributes to `prompts/list`. */
+    getPrompts?(): McpPrompt[];
+
+    /**
+     * Expands one of this behavior's prompts. Returns `undefined` when the name
+     * is not one of its prompts. Required arguments are already checked by the
+     * server when this is called.
+     */
+    getPromptAsync?(name: string, args: Record<string, string>): Promise<McpPromptResult | undefined>;
+
+    /**
+     * Suggests values for an argument of one of this behavior's prompts or
+     * resource templates. Returns `undefined` for "nothing to suggest".
+     */
+    completeAsync?(ref: McpCompletionReference, argument: McpCompletionArgument, context?: { arguments?: Record<string, string> }): Promise<McpCompletion | undefined>;
 }
 
 // ── Builder ───────────────────────────────────────────────────────────────────

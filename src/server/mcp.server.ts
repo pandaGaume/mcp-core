@@ -5,12 +5,18 @@ import type {
     JsonRpcResponse,
     McpClientCapabilities,
     McpClientInfo,
+    McpCompletion,
+    McpCompletionArgument,
+    McpCompletionReference,
     McpInitializeResult,
+    McpLoggingLevel,
+    McpPrompt,
     McpResource,
     McpResourceTemplate,
     McpServerCapabilities,
     McpTool,
 } from "../interfaces";
+import { MCP_LOGGING_LEVELS } from "../interfaces";
 import type { IEventEmitter, IEventSource, Unsubscribe } from "../interfaces/eventSource";
 import { createEventEmitter } from "../interfaces/eventSource";
 import { GRAMMAR_PHRASES_URI, McpGrammar } from "../mcp.grammar";
@@ -67,6 +73,17 @@ function createCountingEventEmitter<T>(): ICountingEventEmitter<T> {
             size = 0;
         },
     };
+}
+
+/** The spec caps `completion.values` at 100 entries per answer. */
+const MAX_COMPLETION_VALUES = 100;
+
+/** Level below which {@link McpServer.log} stays silent until the client calls `logging/setLevel`. */
+const DEFAULT_LOGGING_LEVEL: McpLoggingLevel = "info";
+
+/** `true` when `value` is one of the RFC 5424 severities the spec names. */
+function isLoggingLevel(value: unknown): value is McpLoggingLevel {
+    return typeof value === "string" && (MCP_LOGGING_LEVELS as readonly string[]).includes(value);
 }
 
 /**
@@ -136,6 +153,29 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      * behavior cannot leak its emitter into a stopped server.
      */
     private readonly _behaviorGrammarUnsubs = new Map<string, Unsubscribe>();
+
+    /**
+     * Unsubscribe handles for each behavior's change events
+     * (`onResourceUpdated`, `onResourcesListChanged`, `onPromptsChanged`).
+     *
+     * Kept across {@link stop} and released only by {@link unregister}: the
+     * registration outlives any one connection, and a restarted server must
+     * still hear its behaviors. Emitting while stopped is harmless, since every
+     * send is a no-op without an open transport.
+     */
+    private readonly _behaviorEventUnsubs = new Map<string, Unsubscribe[]>();
+
+    // ── Session state reset on disconnect ────────────────────────────────────
+
+    /**
+     * URIs this session subscribed to with `resources/subscribe`. Matched
+     * exactly, byte for byte: the spec defines no URI normalization, and
+     * inventing one would deliver a notification the client did not ask for.
+     */
+    private readonly _subscriptions = new Set<string>();
+
+    /** Minimum severity {@link log} emits, as set by `logging/setLevel`. */
+    private _logLevel: McpLoggingLevel = DEFAULT_LOGGING_LEVEL;
 
     // ── Grammar ──────────────────────────────────────────────────────────────
 
@@ -299,6 +339,9 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     register(...behavior: IMcpBehavior[]): IMcpServer {
         if (behavior.length !== 0) {
             for (const b of behavior) {
+                // Re-registering a namespace replaces it; drop the old
+                // subscriptions first or the replaced instance keeps talking.
+                this._releaseBehaviorEvents(b.namespace);
                 this._behaviors.set(b.namespace, b);
                 for (const r of b.getResources()) {
                     this._resourceIndex.set(r.uri, b);
@@ -309,8 +352,10 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
                     const unsub = b.onGrammarsChanged.subscribe(() => this._onBehaviorGrammarsChanged());
                     this._behaviorGrammarUnsubs.set(b.namespace, unsub);
                 }
+                this._subscribeBehaviorEvents(b);
             }
             this._notifyResourcesListChanged();
+            if (behavior.some((b) => (b.getPrompts?.().length ?? 0) > 0)) this.notifyPromptsListChanged();
         }
         return this;
     }
@@ -324,8 +369,10 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
                 }
                 this._behaviorGrammarUnsubs.get(b.namespace)?.();
                 this._behaviorGrammarUnsubs.delete(b.namespace);
+                this._releaseBehaviorEvents(b.namespace);
             }
             this._notifyResourcesListChanged();
+            if (behavior.some((b) => (b.getPrompts?.().length ?? 0) > 0)) this.notifyPromptsListChanged();
         }
         return this;
     }
@@ -568,6 +615,173 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         return Mcp.toolNotFound(req.id, name);
     }
 
+    /**
+     * Handles `resources/subscribe`.
+     *
+     * The URI must resolve to something this server can read (a listed
+     * resource, a template match, or the session's phrases), otherwise the
+     * answer is `-32002`: accepting a subscription nothing will ever notify
+     * would leave the client waiting on a URI that does not exist.
+     * Subscribing twice is not an error; the set simply keeps one entry.
+     */
+    resourcesSubscribe(req: JsonRpcRequest): JsonRpcResponse {
+        const uri = (req.params as { uri?: unknown } | undefined)?.uri;
+        if (typeof uri !== "string" || uri.length === 0) return Mcp.invalidParams(req.id, "Missing required parameter: uri");
+        if (!this._isReadable(uri)) return Mcp.resourceNotFound(req.id, uri);
+        this._subscriptions.add(uri);
+        return Mcp.emptyResult(req.id);
+    }
+
+    /**
+     * Handles `resources/unsubscribe`. Idempotent: unsubscribing from a URI
+     * that was never subscribed, or no longer exists, succeeds, because the
+     * state the client asked for (not subscribed) is the state it gets.
+     */
+    resourcesUnsubscribe(req: JsonRpcRequest): JsonRpcResponse {
+        const uri = (req.params as { uri?: unknown } | undefined)?.uri;
+        if (typeof uri !== "string" || uri.length === 0) return Mcp.invalidParams(req.id, "Missing required parameter: uri");
+        this._subscriptions.delete(uri);
+        return Mcp.emptyResult(req.id);
+    }
+
+    /** Handles `prompts/list`: the union of every behavior's prompts. */
+    promptsList(req: JsonRpcRequest): JsonRpcResponse {
+        const prompts: McpPrompt[] = [];
+        for (const behavior of this._behaviors.values()) {
+            prompts.push(...(behavior.getPrompts?.() ?? []));
+        }
+        return Mcp.promptsListResult(req.id, prompts);
+    }
+
+    /**
+     * Handles `prompts/get`.
+     *
+     * An unknown name and a missing required argument are both `-32602`, the
+     * code the spec gives for them. Argument values must be strings; anything
+     * else is refused rather than coerced, since a template that receives
+     * `[object Object]` produces a plausible but wrong message.
+     */
+    async promptsGetAsync(req: JsonRpcRequest): Promise<JsonRpcResponse> {
+        const params = req.params as { name?: unknown; arguments?: unknown } | undefined;
+        const name = params?.name;
+        if (typeof name !== "string" || name.length === 0) return Mcp.invalidParams(req.id, "Missing required parameter: name");
+
+        const rawArgs = params?.arguments ?? {};
+        if (typeof rawArgs !== "object" || rawArgs === null || Array.isArray(rawArgs)) return Mcp.invalidParams(req.id, "arguments must be an object of strings");
+        const args: Record<string, string> = {};
+        for (const [key, value] of Object.entries(rawArgs)) {
+            if (typeof value !== "string") return Mcp.invalidParams(req.id, `Argument "${key}" must be a string`);
+            args[key] = value;
+        }
+
+        const owner = this._promptOwner(name);
+        if (!owner) return Mcp.invalidParams(req.id, `Unknown prompt: ${name}`);
+        const missing = (owner.prompt.arguments ?? []).filter((a) => a.required && args[a.name] === undefined).map((a) => a.name);
+        if (missing.length > 0) return Mcp.invalidParams(req.id, `Missing required argument(s) for prompt "${name}": ${missing.join(", ")}`);
+
+        try {
+            const result = await owner.behavior.getPromptAsync?.(name, args);
+            if (!result) return Mcp.invalidParams(req.id, `Unknown prompt: ${name}`);
+            return Mcp.promptsGetResult(req.id, result);
+        } catch (err) {
+            return Mcp.internalError(req.id, `prompts/get "${name}": ${err instanceof Error ? err.message : String(err)}`);
+        }
+    }
+
+    /**
+     * Handles `completion/complete`.
+     *
+     * The reference is routed to the behavior that owns it: the one listing
+     * the prompt, or the one declaring the resource template. A reference no
+     * behavior owns is `-32602`; an owner with nothing to suggest answers an
+     * empty list, which is a valid answer and not an error.
+     */
+    async completionCompleteAsync(req: JsonRpcRequest): Promise<JsonRpcResponse> {
+        const params = req.params as { ref?: unknown; argument?: unknown; context?: { arguments?: Record<string, string> } } | undefined;
+        const ref = params?.ref as McpCompletionReference | undefined;
+        const argument = params?.argument as McpCompletionArgument | undefined;
+        if (!argument || typeof argument.name !== "string" || typeof argument.value !== "string") {
+            return Mcp.invalidParams(req.id, "argument must be { name: string, value: string }");
+        }
+
+        let owner: IMcpBehavior | undefined;
+        let label: string;
+        if (ref?.type === "ref/prompt" && typeof ref.name === "string") {
+            owner = this._promptOwner(ref.name)?.behavior;
+            label = `prompt "${ref.name}"`;
+        } else if (ref?.type === "ref/resource" && typeof ref.uri === "string") {
+            const uriTemplate = ref.uri;
+            owner = [...this._behaviors.values()].find((b) => b.getResourceTemplates().some((t) => t.uriTemplate === uriTemplate));
+            label = `resource template "${uriTemplate}"`;
+        } else {
+            return Mcp.invalidParams(req.id, 'ref must be { type: "ref/prompt", name } or { type: "ref/resource", uri }');
+        }
+        if (!owner) return Mcp.invalidParams(req.id, `Nothing to complete for ${label}`);
+
+        let completion: McpCompletion | undefined;
+        try {
+            completion = await owner.completeAsync?.(ref, argument, params?.context);
+        } catch (err) {
+            return Mcp.internalError(req.id, `completion/complete: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        const values = completion?.values ?? [];
+        if (values.length <= MAX_COMPLETION_VALUES) return Mcp.completionResult(req.id, { ...completion, values });
+        return Mcp.completionResult(req.id, { values: values.slice(0, MAX_COMPLETION_VALUES), total: completion?.total ?? values.length, hasMore: true });
+    }
+
+    /**
+     * Handles `logging/setLevel`. Dispatched only when logging is enabled
+     * ({@link IMcpServerOptions.logging}); an unknown level is `-32602`.
+     */
+    loggingSetLevel(req: JsonRpcRequest): JsonRpcResponse {
+        const level = (req.params as { level?: unknown } | undefined)?.level;
+        if (!isLoggingLevel(level)) return Mcp.invalidParams(req.id, `level must be one of: ${MCP_LOGGING_LEVELS.join(", ")}`);
+        this._logLevel = level;
+        return Mcp.emptyResult(req.id);
+    }
+
+    // -------------------------------------------------------------------------
+    // Server-initiated notifications
+    // -------------------------------------------------------------------------
+
+    /** `true` when the current session subscribed to exactly `uri`. */
+    isSubscribed(uri: string): boolean {
+        return this._subscriptions.has(uri);
+    }
+
+    /**
+     * Sends `notifications/resources/updated` for `uri` when, and only when,
+     * this session subscribed to it. Returns whether a notification went out.
+     */
+    notifyResourceUpdated(uri: string): boolean {
+        if (!this._subscriptions.has(uri) || !this._transport?.isOpen) return false;
+        this._sendNotification(Mcp.resourceUpdated(uri));
+        return true;
+    }
+
+    /** Sends `notifications/resources/list_changed` to an initialized session. */
+    notifyResourcesListChanged(): void {
+        this._notifyResourcesListChanged();
+    }
+
+    /** Sends `notifications/prompts/list_changed` to an initialized session. */
+    notifyPromptsListChanged(): void {
+        if (!this._sessionReady) return;
+        this._sendNotification(Mcp.promptsListChanged());
+    }
+
+    /**
+     * Emits one `notifications/message`. Silent, and returns `false`, when
+     * logging is not enabled, when `level` is below the level the client set,
+     * or when nothing is connected.
+     */
+    log(level: McpLoggingLevel, data: unknown, logger?: string): boolean {
+        if (!this._options.logging || !this._transport?.isOpen) return false;
+        if (MCP_LOGGING_LEVELS.indexOf(level) < MCP_LOGGING_LEVELS.indexOf(this._logLevel)) return false;
+        this._sendNotification(Mcp.logMessage(level, data, logger));
+        return true;
+    }
+
     // -------------------------------------------------------------------------
     // Grammar patching
     // -------------------------------------------------------------------------
@@ -769,6 +983,8 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         this._protocolVersion = undefined; // revision must be renegotiated on reconnection
         this._sessionGrammar = undefined; // grammar must be re-resolved on reconnection
         this._currentGrammarKey = undefined;
+        this._subscriptions.clear(); // subscriptions belong to the session, not the server
+        this._logLevel = DEFAULT_LOGGING_LEVEL;
         this._clearIdleTimer();
         this._onDisconnected?.emit();
     }
@@ -864,6 +1080,23 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
                 // Custom handlers may leave `ping` out; answering it is mandatory,
                 // so fall back to the empty result the spec defines.
                 return this._handlers.ping?.(req) ?? Mcp.pingResult(req.id);
+            // The handlers below were added after `IMcpServerHandlers` was
+            // published, so a custom handler may lack them: this server's own
+            // implementation answers instead of a `-32601`.
+            case "resources/subscribe":
+                return this._handlers.resourcesSubscribe ? this._handlers.resourcesSubscribe(req) : this.resourcesSubscribe(req);
+            case "resources/unsubscribe":
+                return this._handlers.resourcesUnsubscribe ? this._handlers.resourcesUnsubscribe(req) : this.resourcesUnsubscribe(req);
+            case "prompts/list":
+                return this._handlers.promptsList ? this._handlers.promptsList(req) : this.promptsList(req);
+            case "prompts/get":
+                return this._handlers.promptsGetAsync ? this._handlers.promptsGetAsync(req) : this.promptsGetAsync(req);
+            case "completion/complete":
+                return this._handlers.completionCompleteAsync ? this._handlers.completionCompleteAsync(req) : this.completionCompleteAsync(req);
+            case "logging/setLevel":
+                // A method the server does not advertise is one it does not have.
+                if (!this._options.logging) return Mcp.methodNotFound(req.id, req.method);
+                return this._handlers.loggingSetLevel ? this._handlers.loggingSetLevel(req) : this.loggingSetLevel(req);
             default:
                 return Mcp.methodNotFound(req.id, req.method);
         }
@@ -957,17 +1190,70 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     private _deriveCapabilities(): McpServerCapabilities {
         let hasResources = false;
         let hasTools = false;
+        let hasPrompts = false;
+        let hasCompletions = false;
 
         for (const behavior of this._behaviors.values()) {
             if (!hasResources && (behavior.getResources().length > 0 || behavior.getResourceTemplates().length > 0)) hasResources = true;
             if (!hasTools && behavior.getTools().length > 0) hasTools = true;
-            if (hasResources && hasTools) break;
+            if (!hasPrompts && (behavior.getPrompts?.().length ?? 0) > 0) hasPrompts = true;
+            if (!hasCompletions && typeof behavior.completeAsync === "function") hasCompletions = true;
         }
 
         const capabilities: McpServerCapabilities = {};
-        if (hasResources) capabilities.resources = { listChanged: true };
+        // `subscribe` holds whenever resources exist: the server keeps the
+        // per-session subscription set itself, whether or not a behavior ever
+        // raises `onResourceUpdated`.
+        if (hasResources) capabilities.resources = { subscribe: true, listChanged: true };
         if (hasTools) capabilities.tools = { listChanged: true };
+        if (hasPrompts) capabilities.prompts = { listChanged: true };
+        if (hasCompletions) capabilities.completions = {};
+        if (this._options.logging) capabilities.logging = {};
         return capabilities;
+    }
+
+    /** `true` when `resources/read` could resolve `uri` right now. */
+    private _isReadable(uri: string): boolean {
+        if (uri === GRAMMAR_PHRASES_URI) return this._sessionGrammar?.hasPhrases() ?? false;
+        return this._resourceIndex.has(uri) || this._matchTemplate(uri) !== undefined;
+    }
+
+    /** The behavior that lists prompt `name`, with the prompt itself. */
+    private _promptOwner(name: string): { behavior: IMcpBehavior; prompt: McpPrompt } | undefined {
+        for (const behavior of this._behaviors.values()) {
+            const prompt = behavior.getPrompts?.().find((p) => p.name === name);
+            if (prompt) return { behavior, prompt };
+        }
+        return undefined;
+    }
+
+    /** Rebuilds the exact-URI index after a behavior's resource set changed. */
+    private _reindexResources(): void {
+        this._resourceIndex.clear();
+        for (const behavior of this._behaviors.values()) {
+            for (const r of behavior.getResources()) this._resourceIndex.set(r.uri, behavior);
+        }
+    }
+
+    /** Wires one behavior's change events to the notifications they stand for. */
+    private _subscribeBehaviorEvents(b: IMcpBehavior): void {
+        const unsubs: Unsubscribe[] = [];
+        if (b.onResourceUpdated) unsubs.push(b.onResourceUpdated.subscribe((uri) => void this.notifyResourceUpdated(uri)));
+        if (b.onResourcesListChanged) {
+            unsubs.push(
+                b.onResourcesListChanged.subscribe(() => {
+                    this._reindexResources();
+                    this._notifyResourcesListChanged();
+                })
+            );
+        }
+        if (b.onPromptsChanged) unsubs.push(b.onPromptsChanged.subscribe(() => this.notifyPromptsListChanged()));
+        if (unsubs.length > 0) this._behaviorEventUnsubs.set(b.namespace, unsubs);
+    }
+
+    private _releaseBehaviorEvents(namespace: string): void {
+        for (const unsub of this._behaviorEventUnsubs.get(namespace) ?? []) unsub();
+        this._behaviorEventUnsubs.delete(namespace);
     }
 
     /**
