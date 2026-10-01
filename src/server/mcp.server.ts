@@ -103,10 +103,11 @@ function isLoggingLevel(value: unknown): value is McpLoggingLevel {
  * what another one, or the server, sees of the same request. A `_meta` that is
  * not a plain object is not metadata the spec defines, and is left out.
  */
-function requestContextOf(req: JsonRpcRequest): IMcpRequestContext {
+function requestContextOf(req: JsonRpcRequest, sequence: number): IMcpRequestContext {
     const meta = (req.params as { _meta?: unknown } | undefined)?._meta;
     const usable = typeof meta === "object" && meta !== null && !Array.isArray(meta);
     return Object.freeze({
+        sequence,
         requestId: req.id,
         method: req.method,
         ...(usable ? { meta: Object.freeze({ ...(meta as Record<string, unknown>) }) } : {}),
@@ -203,6 +204,9 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
 
     /** Minimum severity {@link log} emits, as set by `logging/setLevel`. */
     private _logLevel: McpLoggingLevel = DEFAULT_LOGGING_LEVEL;
+
+    /** Monotonic correlation sequence for runtime requests served by this instance. */
+    private _requestSequence = 0;
 
     // ── Grammar ──────────────────────────────────────────────────────────────
 
@@ -574,7 +578,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         }
         const instance = this._resourceIndex.get(uri) ?? this._matchTemplate(uri);
         if (!instance) return Mcp.resourceNotFound(req.id, uri);
-        const r = await instance.readResourceAsync(uri, requestContextOf(req));
+        const r = await instance.readResourceAsync(uri, this._requestContextOf(req));
         if (!r) return Mcp.resourceNotFound(req.id, uri);
 
         return Mcp.resourcesReadResult(req.id, r);
@@ -707,7 +711,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         if (missing.length > 0) return Mcp.invalidParams(req.id, `Missing required argument(s) for prompt "${name}": ${missing.join(", ")}`);
 
         try {
-            const result = await owner.behavior.getPromptAsync?.(name, args, requestContextOf(req));
+            const result = await owner.behavior.getPromptAsync?.(name, args, this._requestContextOf(req));
             if (!result) return Mcp.invalidParams(req.id, `Unknown prompt: ${name}`);
             return Mcp.promptsGetResult(req.id, result);
         } catch (err) {
@@ -747,7 +751,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
 
         let completion: McpCompletion | undefined;
         try {
-            completion = await owner.completeAsync?.(ref, argument, params?.context, requestContextOf(req));
+            completion = await owner.completeAsync?.(ref, argument, params?.context, this._requestContextOf(req));
         } catch (err) {
             return Mcp.internalError(req.id, `completion/complete: ${err instanceof Error ? err.message : String(err)}`);
         }
@@ -1308,6 +1312,13 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         return undefined;
     }
 
+    /** Builds a request context with a server-local sequence that never uses zero or repeats. */
+    private _requestContextOf(req: JsonRpcRequest): IMcpRequestContext {
+        if (this._requestSequence >= Number.MAX_SAFE_INTEGER) throw new Error("MCP request sequence exhausted");
+        this._requestSequence += 1;
+        return requestContextOf(req, this._requestSequence);
+    }
+
     /**
      * Invokes a tool on a specific instance and wraps the result as a JSON-RPC response.
      *
@@ -1318,7 +1329,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      */
     private async _callTool(req: JsonRpcRequest, instance: IMcpRuntimeOperations, uri: string, name: string, args: Record<string, unknown>): Promise<JsonRpcResponse> {
         try {
-            const result = await instance.executeToolAsync(uri, name, args, requestContextOf(req));
+            const result = await instance.executeToolAsync(uri, name, args, this._requestContextOf(req));
             return Mcp.toolCallResult(req.id, result);
         } catch (err) {
             const message = err instanceof Error ? err.message : "Tool execution failed";
