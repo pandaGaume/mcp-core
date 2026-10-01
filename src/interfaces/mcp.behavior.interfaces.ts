@@ -158,6 +158,31 @@ export const MCP_LOGGING_LEVELS = ["debug", "info", "notice", "warning", "error"
 export type McpLoggingLevel = (typeof MCP_LOGGING_LEVELS)[number];
 
 /**
+ * What the server knows about the request a runtime operation is serving.
+ *
+ * Passed as the last, optional argument of every runtime operation, so an
+ * adapter written without it keeps compiling and working. The server builds
+ * one per request and never reuses it.
+ *
+ * `meta` is the request's `params._meta`, verbatim. The spec reserves that
+ * object for metadata that travels alongside a request without being part of
+ * its arguments: a progress token, or keys a relay adds under its own
+ * reverse-DNS prefix (for instance, a broker passing an opaque reference to
+ * the caller). The server does not interpret it; an adapter reads only the
+ * keys it knows, and treats every value as untrusted input from the peer.
+ */
+export interface IMcpRequestContext {
+    /** JSON-RPC id of the request being served, as the peer sent it. */
+    readonly requestId: string | number;
+
+    /** JSON-RPC method of the request being served, e.g. `"tools/call"`. */
+    readonly method: string;
+
+    /** The request's `params._meta`, or `undefined` when it carried none. */
+    readonly meta?: Readonly<Record<string, unknown>>;
+}
+
+/**
  * Shared runtime contract for both behaviors and adapters.
  *
  * This interface represents operations that require a live object to execute ,
@@ -176,7 +201,7 @@ export interface IMcpRuntimeOperations {
      * serialized as MCP-compatible content.
      * Returns `undefined` if the URI is not handled by this instance.
      */
-    readResourceAsync(uri: string): Promise<McpResourceContent | undefined>;
+    readResourceAsync(uri: string, request?: IMcpRequestContext): Promise<McpResourceContent | undefined>;
 
     /**
      * Executes a tool against the object identified by {@link uri}.
@@ -184,8 +209,9 @@ export interface IMcpRuntimeOperations {
      * @param toolName - Namespaced tool name e.g. `"light.dim"`
      * @param uri      - Resource URI identifying the target object e.g. `"light://scene/sun"`
      * @param args     - Tool arguments as defined in the tool's `inputSchema`
+     * @param request  - The request being served (see {@link IMcpRequestContext})
      */
-    executeToolAsync(uri: string, toolName: string, args: Record<string, unknown>): Promise<McpToolResult>;
+    executeToolAsync(uri: string, toolName: string, args: Record<string, unknown>, request?: IMcpRequestContext): Promise<McpToolResult>;
 }
 
 /**
@@ -379,13 +405,18 @@ export interface IMcpBehavior extends IMcpRuntimeOperations, IMcpDesignOperation
      * is not one of its prompts. Required arguments are already checked by the
      * server when this is called.
      */
-    getPromptAsync?(name: string, args: Record<string, string>): Promise<McpPromptResult | undefined>;
+    getPromptAsync?(name: string, args: Record<string, string>, request?: IMcpRequestContext): Promise<McpPromptResult | undefined>;
 
     /**
      * Suggests values for an argument of one of this behavior's prompts or
      * resource templates. Returns `undefined` for "nothing to suggest".
      */
-    completeAsync?(ref: McpCompletionReference, argument: McpCompletionArgument, context?: { arguments?: Record<string, string> }): Promise<McpCompletion | undefined>;
+    completeAsync?(
+        ref: McpCompletionReference,
+        argument: McpCompletionArgument,
+        context?: { arguments?: Record<string, string> },
+        request?: IMcpRequestContext
+    ): Promise<McpCompletion | undefined>;
 }
 
 // ── Builder ───────────────────────────────────────────────────────────────────

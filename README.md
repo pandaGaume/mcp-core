@@ -124,6 +124,7 @@ Revisions accepted during the handshake: `2025-11-25` (default), `2025-06-18`, `
 | `logging/setLevel`, `notifications/message` | yes (1.3.0), opt-in with `withOptions({ logging: true })` |
 | `structuredContent` and `outputSchema` on tools | yes |
 | `title`, `icons`, `annotations`, `_meta` on tools, resources and templates | yes |
+| Request `params._meta` handed to adapters and behaviors (`IMcpRequestContext`) | yes (1.4.0) |
 | Binary resources (`blob`), `audio` and `resource_link` content blocks | yes |
 | `ping` (both directions) | yes |
 | Pagination (`cursor` / `nextCursor`) | client follows it; server returns single pages |

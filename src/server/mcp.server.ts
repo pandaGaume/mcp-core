@@ -1,4 +1,14 @@
-import type { IMessageTransport, IMcpBehavior, IMcpInitializer, IMcpRuntimeOperations, IMcpServer, IMcpServerHandlers, IMcpServerOptions, McpGrammarResolver } from "../interfaces";
+import type {
+    IMessageTransport,
+    IMcpBehavior,
+    IMcpInitializer,
+    IMcpRequestContext,
+    IMcpRuntimeOperations,
+    IMcpServer,
+    IMcpServerHandlers,
+    IMcpServerOptions,
+    McpGrammarResolver,
+} from "../interfaces";
 import type {
     JsonRpcNotification,
     JsonRpcRequest,
@@ -84,6 +94,23 @@ const DEFAULT_LOGGING_LEVEL: McpLoggingLevel = "info";
 /** `true` when `value` is one of the RFC 5424 severities the spec names. */
 function isLoggingLevel(value: unknown): value is McpLoggingLevel {
     return typeof value === "string" && (MCP_LOGGING_LEVELS as readonly string[]).includes(value);
+}
+
+/**
+ * Builds the {@link IMcpRequestContext} a runtime operation receives.
+ *
+ * `params._meta` is copied (shallowly) and frozen, so an adapter cannot alter
+ * what another one, or the server, sees of the same request. A `_meta` that is
+ * not a plain object is not metadata the spec defines, and is left out.
+ */
+function requestContextOf(req: JsonRpcRequest): IMcpRequestContext {
+    const meta = (req.params as { _meta?: unknown } | undefined)?._meta;
+    const usable = typeof meta === "object" && meta !== null && !Array.isArray(meta);
+    return Object.freeze({
+        requestId: req.id,
+        method: req.method,
+        ...(usable ? { meta: Object.freeze({ ...(meta as Record<string, unknown>) }) } : {}),
+    });
 }
 
 /**
@@ -547,7 +574,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         }
         const instance = this._resourceIndex.get(uri) ?? this._matchTemplate(uri);
         if (!instance) return Mcp.resourceNotFound(req.id, uri);
-        const r = await instance.readResourceAsync(uri);
+        const r = await instance.readResourceAsync(uri, requestContextOf(req));
         if (!r) return Mcp.resourceNotFound(req.id, uri);
 
         return Mcp.resourcesReadResult(req.id, r);
@@ -680,7 +707,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         if (missing.length > 0) return Mcp.invalidParams(req.id, `Missing required argument(s) for prompt "${name}": ${missing.join(", ")}`);
 
         try {
-            const result = await owner.behavior.getPromptAsync?.(name, args);
+            const result = await owner.behavior.getPromptAsync?.(name, args, requestContextOf(req));
             if (!result) return Mcp.invalidParams(req.id, `Unknown prompt: ${name}`);
             return Mcp.promptsGetResult(req.id, result);
         } catch (err) {
@@ -720,7 +747,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
 
         let completion: McpCompletion | undefined;
         try {
-            completion = await owner.completeAsync?.(ref, argument, params?.context);
+            completion = await owner.completeAsync?.(ref, argument, params?.context, requestContextOf(req));
         } catch (err) {
             return Mcp.internalError(req.id, `completion/complete: ${err instanceof Error ? err.message : String(err)}`);
         }
@@ -1291,7 +1318,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      */
     private async _callTool(req: JsonRpcRequest, instance: IMcpRuntimeOperations, uri: string, name: string, args: Record<string, unknown>): Promise<JsonRpcResponse> {
         try {
-            const result = await instance.executeToolAsync(uri, name, args);
+            const result = await instance.executeToolAsync(uri, name, args, requestContextOf(req));
             return Mcp.toolCallResult(req.id, result);
         } catch (err) {
             const message = err instanceof Error ? err.message : "Tool execution failed";
