@@ -134,6 +134,12 @@ Revisions accepted during the handshake: `2025-11-25` (default), `2025-06-18`, `
 | OAuth 2.1 resource server: RFC 9728 metadata, `WWW-Authenticate` challenges, audience-bound tokens, 401/403 | yes, server side |
 | OAuth client flow: metadata discovery, PKCE, `resource` parameter, step-up | not yet: supply a token via `IStreamableHttpTransportOptions.headers` |
 
+`IMcpRequestContext` contains the peer-provided JSON-RPC `requestId`, the MCP
+`method`, optional `params._meta`, and a server-generated `sequence`. The
+sequence is monotonic and unique for the lifetime of one `McpServer`, so an
+adapter can correlate traces even when a peer reuses a JSON-RPC id after its
+previous request has completed.
+
 Every request a client may send is listed per revision in `MCP_SERVER_REQUEST_METHODS`, and `tests/spec.coverage.test.ts` sends each one to a server: a `-32601` fails the build unless the method is declared in `MCP_SERVER_UNSUPPORTED_METHODS` with a reason (today only the experimental `tasks/*`). That test is what was missing when subscriptions, prompts, completion and logging all answered `-32601` for five revisions.
 
 Tool execution failures come back as `isError: true` results rather than JSON-RPC errors, which is what the spec asks for so the model can self-correct. Protocol errors stay protocol errors: an unknown tool is `-32602`, an unknown resource `-32002`, a JSON-RPC batch `-32600` (batching was removed from MCP in `2025-06-18`).

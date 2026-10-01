@@ -172,6 +172,9 @@ export type McpLoggingLevel = (typeof MCP_LOGGING_LEVELS)[number];
  * keys it knows, and treats every value as untrusted input from the peer.
  */
 export interface IMcpRequestContext {
+    /** Server-local monotonic sequence, unique for this server lifetime. */
+    readonly sequence: number;
+
     /** JSON-RPC id of the request being served, as the peer sent it. */
     readonly requestId: string | number;
 

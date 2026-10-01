@@ -17,10 +17,11 @@ import type {
 
 /**
  * Every runtime operation receives the request it serves, as an optional last
- * argument: id, method, and `params._meta` verbatim. A relay in front of the
- * server (a broker) puts there what the adapter needs to know about the
- * caller, so the context has to reach the adapter through every layer, and an
- * adapter written before it existed has to keep working unchanged.
+ * argument: a server sequence, id, method, and `params._meta` verbatim. A relay
+ * in front of the server (a broker) puts there what the adapter needs to know
+ * about the caller, so the context has to reach the adapter through every
+ * layer, and an adapter written before it existed has to keep working
+ * unchanged.
  */
 
 /** Records the request context each operation received. */
@@ -126,7 +127,7 @@ describe("the request context", () => {
 
         await server.toolsCallAsync(req("tools/call", { name: "rec_do", arguments: {}, _meta: META }, "call-1"));
 
-        expect(recorder.seen).toEqual([{ op: "call", request: { requestId: "call-1", method: "tools/call", meta: META } }]);
+        expect(recorder.seen).toEqual([{ op: "call", request: { sequence: 1, requestId: "call-1", method: "tools/call", meta: META } }]);
     });
 
     it("reaches the adapter on the singleton fallback of tools/call too", async () => {
@@ -144,7 +145,7 @@ describe("the request context", () => {
 
         await server.resourcesRead(req("resources/read", { uri: "rec://item/3", _meta: META }, 9));
 
-        expect(recorder.seen).toEqual([{ op: "read", request: { requestId: 9, method: "resources/read", meta: META } }]);
+        expect(recorder.seen).toEqual([{ op: "read", request: { sequence: 1, requestId: 9, method: "resources/read", meta: META } }]);
     });
 
     it("is not given to the shared, cached root resource", async () => {
@@ -166,8 +167,8 @@ describe("the request context", () => {
         await server.completionCompleteAsync(req("completion/complete", { ref: { type: "ref/prompt", name: "p" }, argument: { name: "a", value: "" }, _meta: META }, 3));
 
         expect(recorder.seen).toEqual([
-            { op: "prompt", request: { requestId: 2, method: "prompts/get", meta: META } },
-            { op: "complete", request: { requestId: 3, method: "completion/complete", meta: META } },
+            { op: "prompt", request: { sequence: 1, requestId: 2, method: "prompts/get", meta: META } },
+            { op: "complete", request: { sequence: 2, requestId: 3, method: "completion/complete", meta: META } },
         ]);
     });
 
@@ -180,10 +181,26 @@ describe("the request context", () => {
         await server.toolsCallAsync(req("tools/call", { name: "rec_do", _meta: null }));
 
         expect(recorder.seen).toHaveLength(3);
-        for (const { request } of recorder.seen) {
-            expect(request).toEqual({ requestId: 1, method: "tools/call" });
+        for (const [index, { request }] of recorder.seen.entries()) {
+            expect(request).toEqual({ sequence: index + 1, requestId: 1, method: "tools/call" });
             expect(request && "meta" in request).toBe(false);
         }
+    });
+
+    it("assigns a server-local sequence even when the peer reuses its request id", async () => {
+        const recorder = new RecordingAdapter();
+        const server = await serve(new RecordingBehavior(recorder));
+
+        await server.toolsCallAsync(req("tools/call", { name: "rec_do" }, "same-id"));
+        await server.toolsCallAsync(req("tools/call", { name: "rec_do" }, "same-id"));
+
+        expect(recorder.seen.map(({ request }) => request?.requestId)).toEqual(["same-id", "same-id"]);
+        expect(recorder.seen.map(({ request }) => request?.sequence)).toEqual([1, 2]);
+
+        const otherRecorder = new RecordingAdapter();
+        const otherServer = await serve(new RecordingBehavior(otherRecorder));
+        await otherServer.toolsCallAsync(req("tools/call", { name: "rec_do" }, "same-id"));
+        expect(otherRecorder.seen[0]?.request?.sequence).toBe(1);
     });
 
     it("is frozen, so one adapter cannot change what another sees", async () => {
