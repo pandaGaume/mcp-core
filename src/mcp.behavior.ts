@@ -4,6 +4,7 @@ import {
     IEventEmitter,
     IEventSource,
     IMcpBehaviorAdapter,
+    IMcpRequestContext,
     McpResource,
     McpResourceContent,
     McpResourceTemplate,
@@ -205,7 +206,12 @@ export abstract class McpBehavior extends McpBehaviorBase {
         return this._toolsCache;
     }
 
-    public override async readResourceAsync(uri: string): Promise<McpResourceContent | undefined> {
+    /**
+     * The root resource is built once and shared by every caller, so it is
+     * built without the request: content that depends on who asks belongs on
+     * an instance URI, which reaches the adapter with the request each time.
+     */
+    public override async readResourceAsync(uri: string, request?: IMcpRequestContext): Promise<McpResourceContent | undefined> {
         // behavior root uri, build own resource content (cached)
         const rootUri = this.getResources()[0]?.uri;
         if (uri === rootUri) {
@@ -231,11 +237,11 @@ export abstract class McpBehavior extends McpBehaviorBase {
         }
 
         // specific instance uri, delegate to adapter
-        return this._adapter.readResourceAsync(uri);
+        return this._adapter.readResourceAsync(uri, request);
     }
 
-    public override async executeToolAsync(uri: string, toolName: string, args: Record<string, unknown>): Promise<McpToolResult> {
-        return this._adapter.executeToolAsync(uri, toolName, args);
+    public override async executeToolAsync(uri: string, toolName: string, args: Record<string, unknown>, request?: IMcpRequestContext): Promise<McpToolResult> {
+        return this._adapter.executeToolAsync(uri, toolName, args, request);
     }
 
     protected _buildResources(): McpResource[] {

@@ -1,4 +1,4 @@
-import type { IMcpBehavior, McpResource, McpResourceContent, McpResourceTemplate, McpTool, McpToolResult } from "./interfaces";
+import type { IMcpBehavior, IMcpRequestContext, McpResource, McpResourceContent, McpResourceTemplate, McpTool, McpToolResult } from "./interfaces";
 import { McpToolResults } from "./mcp.toolResult";
 
 export type McpBehaviorOptions = {
@@ -100,11 +100,11 @@ export class McpBehaviorBase implements IMcpBehavior {
         return this._mimeType;
     }
 
-    public readResourceAsync(_uri: string): Promise<McpResourceContent | undefined> {
+    public readResourceAsync(_uri: string, _request?: IMcpRequestContext): Promise<McpResourceContent | undefined> {
         return Promise.resolve(undefined);
     }
 
-    public executeToolAsync(_uri: string, _toolName: string, _args: Record<string, unknown>): Promise<McpToolResult> {
+    public executeToolAsync(_uri: string, _toolName: string, _args: Record<string, unknown>, _request?: IMcpRequestContext): Promise<McpToolResult> {
         return Promise.resolve(McpToolResults.error(`Tool not implemented: ${_toolName}`));
     }
 

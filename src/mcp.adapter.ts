@@ -1,4 +1,4 @@
-import { createEventEmitter, IEventEmitter, IEventSource, IMcpBehaviorAdapter, McpResourceContent, McpToolResult, ToolSupport } from "./interfaces";
+import { createEventEmitter, IEventEmitter, IEventSource, IMcpBehaviorAdapter, IMcpRequestContext, McpResourceContent, McpToolResult, ToolSupport } from "./interfaces";
 import type { McpGrammar } from "./mcp.grammar";
 
 export abstract class McpAdapterBase implements IMcpBehaviorAdapter {
@@ -98,6 +98,10 @@ export abstract class McpAdapterBase implements IMcpBehaviorAdapter {
         this._onResourceContentChanged?.emit(uri);
     }
 
-    public abstract readResourceAsync(uri: string): Promise<McpResourceContent | undefined>;
-    public abstract executeToolAsync(uri: string, toolName: string, args: Record<string, unknown>): Promise<McpToolResult>;
+    /**
+     * `request` is optional and may be left out of an override: an adapter
+     * that does not need to know who is asking ignores it.
+     */
+    public abstract readResourceAsync(uri: string, request?: IMcpRequestContext): Promise<McpResourceContent | undefined>;
+    public abstract executeToolAsync(uri: string, toolName: string, args: Record<string, unknown>, request?: IMcpRequestContext): Promise<McpToolResult>;
 }
