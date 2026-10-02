@@ -300,7 +300,71 @@ describe("StreamableHttpTransport", () => {
         expect(server.requests.filter((r) => r.method === "GET")[1].headers["last-event-id"]).toBe("evt-9");
     });
 
+    it("keeps one GET stream while it is open, however many POSTs follow", async () => {
+        server = await startServer((req, res, { requests }) => {
+            if (req.method === "GET") {
+                res.writeHead(200, { "Content-Type": "text/event-stream" });
+                res.write(": open\n\n"); // flushes the headers: the stream is live
+                return;
+            }
+            const id = (JSON.parse(requests[requests.length - 1].body) as { id: number }).id;
+            jsonResponse(res, { jsonrpc: "2.0", id, result: {} }, "sess-1");
+        });
+
+        transport = new StreamableHttpTransport(server.url);
+        const messages: string[] = [];
+        transport.onMessage = (data) => messages.push(data);
+        await open(transport);
+        for (let id = 1; id <= 20; id++) {
+            transport.send(JSON.stringify({ jsonrpc: "2.0", id, method: "ping" }));
+            await waitFor(() => messages.length === id);
+        }
+        await sleep(50);
+
+        expect(server.requests.filter((r) => r.method === "GET")).toHaveLength(1);
+    });
+
     // ── HTTP failures ────────────────────────────────────────────────────
+
+    it("fails the pending request at once when its POST connection breaks", async () => {
+        server = await startServer((req) => {
+            req.socket.destroy(); // no HTTP answer at all: a reset connection
+        });
+
+        transport = new StreamableHttpTransport(server.url, { enableGetStream: false });
+        const messages: string[] = [];
+        const errors: string[] = [];
+        transport.onMessage = (data) => messages.push(data);
+        transport.onError = (error) => errors.push(error.message);
+
+        await open(transport);
+        transport.send(JSON.stringify({ jsonrpc: "2.0", id: 21, method: "tools/list" }));
+        await waitFor(() => messages.length === 1);
+
+        const failure = JSON.parse(messages[0]);
+        expect(failure.id).toBe(21);
+        expect(failure.error.code).toBe(-32000);
+        expect(failure.error.message).toMatch(/request failed/i);
+        expect(errors).toHaveLength(0);
+    });
+
+    it("reports a broken POST connection on a notification through onError", async () => {
+        server = await startServer((req) => {
+            req.socket.destroy();
+        });
+
+        transport = new StreamableHttpTransport(server.url, { enableGetStream: false });
+        const messages: string[] = [];
+        const errors: string[] = [];
+        transport.onMessage = (data) => messages.push(data);
+        transport.onError = (error) => errors.push(error.message);
+
+        await open(transport);
+        transport.send(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }));
+        await waitFor(() => errors.length === 1);
+
+        expect(messages).toHaveLength(0);
+    });
 
     it("fails the pending request when the server answers an HTTP error", async () => {
         server = await startServer((_req, res) => {

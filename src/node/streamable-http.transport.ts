@@ -259,7 +259,12 @@ export class StreamableHttpTransport implements IMessageTransport {
         // Remember which JSON-RPC request this POST carries, so an HTTP-level
         // failure can be reported against it instead of leaving it hanging.
         const requestId = pendingRequestId(data);
-        const request = this._request("POST", headers, (response) => this._handlePostResponse(response, requestId));
+        const request = this._request(
+            "POST",
+            headers,
+            (response) => this._handlePostResponse(response, requestId),
+            (error) => this._reportConnectionFailure(error, requestId)
+        );
         request.end(data);
     }
 
@@ -291,8 +296,9 @@ export class StreamableHttpTransport implements IMessageTransport {
      * on a Node stream is thrown rather than reported: and a broken connection
      * is routine on a long-lived stream.
      *
-     * @param onFailure - Replaces the default {@link onError} reporting, so a
-     *                    stream that recovers on its own stays quiet.
+     * @param onFailure - Replaces the default {@link onError} reporting of a
+     *                    broken request or response: a stream that recovers on
+     *                    its own stays quiet, a POST settles its pending call.
      */
     private _request(method: string, headers: Record<string, string>, onResponse: (response: IncomingMessage) => void, onFailure?: (error: Error) => void): ClientRequest {
         const request = makeRequest(this._url, { method, headers }, (response) => {
@@ -305,7 +311,9 @@ export class StreamableHttpTransport implements IMessageTransport {
 
             this._responses.add(response);
             response.on("error", (error: Error) => {
-                if (this._open && !onFailure) this.onError?.(error);
+                if (!this._open) return;
+                if (onFailure) onFailure(error);
+                else this.onError?.(error);
             });
             response.on("close", () => {
                 this._responses.delete(response);
@@ -433,6 +441,28 @@ export class StreamableHttpTransport implements IMessageTransport {
         );
     }
 
+    /**
+     * A POST whose connection broke (refused, reset, no free port) got no HTTP
+     * answer at all. Its pending call is settled with a JSON-RPC error at once,
+     * as for an HTTP failure, instead of waiting out the caller's timeout; a
+     * failure that belongs to no request goes to {@link onError}.
+     */
+    private _reportConnectionFailure(error: Error, requestId: JsonRpcId | undefined): void {
+        const message = `Streamable HTTP request failed: ${error.message}`;
+        if (requestId === undefined) {
+            this.onError?.(new Error(message));
+            return;
+        }
+        const code = (error as NodeJS.ErrnoException).code;
+        this.onMessage?.(
+            JSON.stringify({
+                jsonrpc: "2.0",
+                id: requestId,
+                error: { code: -32000, message, ...(code ? { data: { code } } : {}) },
+            })
+        );
+    }
+
     // -------------------------------------------------------------------------
     // SSE streams
     // -------------------------------------------------------------------------
@@ -481,7 +511,7 @@ export class StreamableHttpTransport implements IMessageTransport {
         const request = this._request(
             "GET",
             headers,
-            (response) => this._handleGetResponse(response),
+            (response) => this._handleGetResponse(response, request),
             () => {
                 this._getStreamRequest = null;
                 this._scheduleGetStream();
@@ -492,7 +522,7 @@ export class StreamableHttpTransport implements IMessageTransport {
         request.end();
     }
 
-    private _handleGetResponse(response: IncomingMessage): void {
+    private _handleGetResponse(response: IncomingMessage, request: ClientRequest): void {
         const status = response.statusCode ?? 0;
         this._getStreamRequest = null;
 
@@ -517,7 +547,14 @@ export class StreamableHttpTransport implements IMessageTransport {
         }
 
         this._captureSession(response);
-        this._consumeSse(response, () => this._scheduleGetStream());
+        // The stream stays the live one until it ends: a POST that completes
+        // meanwhile must not open another (one socket per call otherwise). A
+        // new session id seen just above has already scheduled its own stream.
+        if (this._getStreamTimer === null) this._getStreamRequest = request;
+        this._consumeSse(response, () => {
+            if (this._getStreamRequest === request) this._getStreamRequest = null;
+            this._scheduleGetStream();
+        });
     }
 
     private _scheduleGetStream(): void {
