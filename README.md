@@ -560,6 +560,9 @@ Limits, stated plainly:
 - Cancellation crosses both ways: the agent's `signal` withdraws the server call, and an MCP cancellation aborts the page tool's `signal`.
 - Two documents registering one name: the first keeps it. Running both bridges on one server would re-import the exported tools; pass a `filter`.
 - A page tool with an argument named `uri` is routed by the server as a resource URI (see `tools/call` routing), and answers `-32002`.
+- Chrome 157 drops `outputSchema`: the exporter passes it, `getTools()` does not return it.
+
+`npm run test:browser` runs both bridges against a real Chrome with WebMCP enabled; see [e2e/webmcp](e2e/webmcp/README.md).
 
 ## URI templates (RFC 6570)
 

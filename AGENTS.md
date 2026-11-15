@@ -150,6 +150,7 @@ new McpServerBuilder().withName("page").withTransport(transport).register(new We
 - The exporter follows `tools/list_changed`; the adapter follows `toolchange`. Both report through `onError` (default `console.warn`) and keep going.
 - Names must match `[A-Za-z0-9_.-]{1,128}`; others are left out. A name two documents register: the first wins.
 - Cancellation crosses both ways (§5b): the agent's `signal` withdraws the server call; an MCP cancellation aborts the page tool's `signal`.
+- `npm run test:browser` checks all of this against a real Chrome (146+, `--enable-features=WebMCP`, headless, throwaway profile): `e2e/webmcp/`. Chrome 157 drops `outputSchema` from `getTools()`.
 
 ## 7. Spec coverage
 
