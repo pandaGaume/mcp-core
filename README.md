@@ -1,4 +1,4 @@
-[![npm](https://img.shields.io/npm/v/@cyanmycelium/mcp-core)](https://www.npmjs.com/package/@cyanmycelium/mcp-core) [![mcp-broker: 1.11.0](docs/assets/mcp-broker-badge.svg)](https://github.com/pandaGaume/mcp-broker)
+[![npm](https://img.shields.io/npm/v/@cyanmycelium/mcp-core)](https://www.npmjs.com/package/@cyanmycelium/mcp-core) [![mcp-broker: 1.12.0](docs/assets/mcp-broker-badge.svg)](https://github.com/pandaGaume/mcp-broker)
 [![CI](https://github.com/pandaGaume/mcp-core/actions/workflows/ci.yml/badge.svg)](https://github.com/pandaGaume/mcp-core/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
