@@ -5,6 +5,7 @@ export abstract class McpAdapterBase implements IMcpBehaviorAdapter {
     private _domain: string;
     private _onResourceContentChanged?: IEventEmitter<string>;
     private _onResourcesChanged?: IEventEmitter<void>;
+    private _onToolsChanged?: IEventEmitter<void>;
     private _accept?: (uri: string) => boolean;
 
     constructor(domain: string) {
@@ -50,6 +51,15 @@ export abstract class McpAdapterBase implements IMcpBehaviorAdapter {
         return this._onResourcesChanged;
     }
 
+    // ── Tool events ──────────────────────────────────────────────────────────
+
+    public get onToolsChanged(): IEventSource<void> {
+        if (!this._onToolsChanged) {
+            this._onToolsChanged = createEventEmitter<void>();
+        }
+        return this._onToolsChanged;
+    }
+
     // ── Tool support ─────────────────────────────────────────────────────────
 
     /**
@@ -88,10 +98,21 @@ export abstract class McpAdapterBase implements IMcpBehaviorAdapter {
         this._onResourceContentChanged = undefined;
         this._onResourcesChanged?.clear();
         this._onResourcesChanged = undefined;
+        this._onToolsChanged?.clear();
+        this._onToolsChanged = undefined;
     }
 
     protected _forwardResourceChanged() {
         this._onResourcesChanged?.emit();
+    }
+
+    /**
+     * Reports that the tools this adapter backs changed (added, removed, or
+     * their {@link getToolSupport} answer moved). The behavior rebuilds its
+     * tool list and the server sends `notifications/tools/list_changed`.
+     */
+    protected _forwardToolsChanged() {
+        this._onToolsChanged?.emit();
     }
 
     protected _forwardResourceContentChanged(uri: string) {

@@ -43,6 +43,9 @@ export abstract class McpBehavior extends McpBehaviorBase {
     /** Emitter behind {@link onResourcesListChanged}. Created on first access. */
     private _onResourcesListChanged?: IEventEmitter<void>;
 
+    /** Emitter behind {@link onToolsListChanged}. Created on first access. */
+    private _onToolsListChanged?: IEventEmitter<void>;
+
     public constructor(adapter: IMcpBehaviorAdapter, options: McpBehaviorOptions) {
         super(options);
         this._adapter = adapter;
@@ -61,6 +64,23 @@ export abstract class McpBehavior extends McpBehaviorBase {
             this._resourceContentCache.clear();
             this._onResourcesListChanged?.emit();
         });
+        adapter.onToolsChanged?.subscribe(() => this._invalidateTools());
+    }
+
+    /** Fires when the tool list changed, after the cached copy was dropped. */
+    public get onToolsListChanged(): IEventSource<void> {
+        if (!this._onToolsListChanged) this._onToolsListChanged = createEventEmitter<void>();
+        return this._onToolsListChanged;
+    }
+
+    /**
+     * Drops the cached tool list and reports the change. Call it when the
+     * state {@link _buildTools} reads from changed; an adapter reaches the
+     * same place through `_forwardToolsChanged()`.
+     */
+    protected _invalidateTools(): void {
+        this._toolsCache = undefined;
+        this._onToolsListChanged?.emit();
     }
 
     /**

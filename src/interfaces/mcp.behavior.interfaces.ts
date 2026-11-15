@@ -250,6 +250,15 @@ export interface IMcpDesignOperations {
 export interface IMcpBehaviorAdapter extends IMcpRuntimeOperations {
     onResourceContentChanged: IEventSource<string>;
     onResourcesChanged: IEventSource<void>;
+
+    /**
+     * Fires when the set of tools this adapter backs, or their support level,
+     * changed at runtime. An `McpBehavior` drops its cached tool list and
+     * raises {@link IMcpBehavior.onToolsListChanged}. Optional, so an adapter
+     * written before 1.5.0 keeps compiling.
+     */
+    onToolsChanged?: IEventSource<void>;
+
     domain: string;
 
     /**
@@ -397,6 +406,21 @@ export interface IMcpBehavior extends IMcpRuntimeOperations, IMcpDesignOperation
 
     /** Fires when {@link getPrompts} would now answer differently (`notifications/prompts/list_changed`). */
     onPromptsChanged?: IEventSource<void>;
+
+    /**
+     * Fires when {@link getTools} would now answer differently. The server
+     * emits `notifications/tools/list_changed` to an initialized session.
+     */
+    onToolsListChanged?: IEventSource<void>;
+
+    /**
+     * `true` when the tool set is filled at runtime and may be empty when a
+     * client connects (a bridge to tools registered by a web page, say). The
+     * server then advertises the `tools` capability even while
+     * {@link getTools} returns nothing, so the client lists tools again on
+     * `notifications/tools/list_changed` instead of concluding there are none.
+     */
+    readonly dynamicTools?: boolean;
 
     // ── Prompts and completion ───────────────────────────────────────────────
 

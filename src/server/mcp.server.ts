@@ -386,6 +386,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
                 this._subscribeBehaviorEvents(b);
             }
             this._notifyResourcesListChanged();
+            if (behavior.some((b) => b.getTools().length > 0)) this._notifyToolsListChanged();
             if (behavior.some((b) => (b.getPrompts?.().length ?? 0) > 0)) this.notifyPromptsListChanged();
         }
         return this;
@@ -403,6 +404,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
                 this._releaseBehaviorEvents(b.namespace);
             }
             this._notifyResourcesListChanged();
+            if (behavior.some((b) => b.getTools().length > 0)) this._notifyToolsListChanged();
             if (behavior.some((b) => (b.getPrompts?.().length ?? 0) > 0)) this.notifyPromptsListChanged();
         }
         return this;
@@ -799,6 +801,11 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     notifyPromptsListChanged(): void {
         if (!this._sessionReady) return;
         this._sendNotification(Mcp.promptsListChanged());
+    }
+
+    /** Sends `notifications/tools/list_changed` to an initialized session. */
+    notifyToolsListChanged(): void {
+        this._notifyToolsListChanged();
     }
 
     /**
@@ -1226,7 +1233,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
 
         for (const behavior of this._behaviors.values()) {
             if (!hasResources && (behavior.getResources().length > 0 || behavior.getResourceTemplates().length > 0)) hasResources = true;
-            if (!hasTools && behavior.getTools().length > 0) hasTools = true;
+            if (!hasTools && (behavior.dynamicTools === true || behavior.getTools().length > 0)) hasTools = true;
             if (!hasPrompts && (behavior.getPrompts?.().length ?? 0) > 0) hasPrompts = true;
             if (!hasCompletions && typeof behavior.completeAsync === "function") hasCompletions = true;
         }
@@ -1279,6 +1286,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
             );
         }
         if (b.onPromptsChanged) unsubs.push(b.onPromptsChanged.subscribe(() => this.notifyPromptsListChanged()));
+        if (b.onToolsListChanged) unsubs.push(b.onToolsListChanged.subscribe(() => this._notifyToolsListChanged()));
         if (unsubs.length > 0) this._behaviorEventUnsubs.set(b.namespace, unsubs);
     }
 
