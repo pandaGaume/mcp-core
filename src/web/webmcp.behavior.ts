@@ -91,11 +91,15 @@ export class WebMcpAdapter extends McpAdapterBase {
         return undefined;
     }
 
-    public override async executeToolAsync(_uri: string, toolName: string, args: Record<string, unknown>, _request?: IMcpRequestContext): Promise<McpToolResult> {
+    /**
+     * Runs the page's tool. A request the MCP client cancels aborts the
+     * `executeTool` call, and the page's `execute` sees its signal abort.
+     */
+    public override async executeToolAsync(_uri: string, toolName: string, args: Record<string, unknown>, request?: IMcpRequestContext): Promise<McpToolResult> {
         const tool = this._tools.get(toolName);
         if (!tool || !this._context) return McpToolResults.error(`WebMCP tool "${toolName}" is no longer registered`);
         try {
-            return fromWebMcpResult(await this._context.executeTool(tool, args));
+            return fromWebMcpResult(await this._context.executeTool(tool, args, request?.signal ? { signal: request.signal } : undefined));
         } catch (error) {
             // WebMCP rejects with a bare OperationError and keeps the page's
             // reason to itself, so this is all there is to tell.

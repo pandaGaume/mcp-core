@@ -3,6 +3,19 @@ import type { McpInitializeResult, McpResource, McpResourceContent, McpResourceT
 import type { McpCompletion, McpCompletionArgument, McpCompletionReference, McpLoggingLevel, McpPrompt, McpPromptResult, McpToolResult } from "./mcp.behavior.interfaces";
 
 /**
+ * Per-call options of the client operations that run on the server.
+ */
+export interface McpRequestOptions {
+    /**
+     * Cancels the call. The client sends `notifications/cancelled`, forgets
+     * the request, and rejects with an `AbortError`; a late answer from the
+     * server is ignored, as the spec asks. The server may still have done part
+     * of the work.
+     */
+    signal?: AbortSignal;
+}
+
+/**
  * Minimalist MCP client that connects to an MCP server via any {@link IMessageTransport}.
  *
  * Handles the JSON-RPC 2.0 protocol, the MCP initialization handshake, and
@@ -66,7 +79,7 @@ export interface IMcpClient {
     listResourceTemplates(): Promise<McpResourceTemplate[]>;
 
     /** Calls `resources/read` for the given URI. */
-    readResource(uri: string): Promise<McpResourceContent>;
+    readResource(uri: string, options?: McpRequestOptions): Promise<McpResourceContent>;
 
     // ── Tools ────────────────────────────────────────────────────────────
 
@@ -74,7 +87,7 @@ export interface IMcpClient {
     listTools(): Promise<McpTool[]>;
 
     /** Calls `tools/call` with the given tool name and arguments. */
-    callTool(name: string, args: Record<string, unknown>): Promise<McpToolResult>;
+    callTool(name: string, args: Record<string, unknown>, options?: McpRequestOptions): Promise<McpToolResult>;
 
     // ── Notifications ────────────────────────────────────────────────────
 
@@ -100,7 +113,7 @@ export interface IMcpClient {
     listPrompts?(): Promise<McpPrompt[]>;
 
     /** Calls `prompts/get`. */
-    getPrompt?(name: string, args?: Record<string, string>): Promise<McpPromptResult>;
+    getPrompt?(name: string, args?: Record<string, string>, options?: McpRequestOptions): Promise<McpPromptResult>;
 
     /** Emitted when the server sends `notifications/prompts/list_changed`. */
     readonly onPromptsChanged?: IEventSource<void>;

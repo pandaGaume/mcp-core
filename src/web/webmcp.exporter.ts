@@ -40,8 +40,8 @@ interface IPublished {
  * disappeared is unregistered, a changed one is registered again.
  *
  * Only tools cross over: WebMCP has no resources, prompts or notifications.
- * Cancellation is not forwarded yet, so a call the agent cancels still runs
- * to completion on the server; its result is discarded by the browser.
+ * A call the agent cancels is withdrawn from the server with
+ * `notifications/cancelled`; the adapter sees its request signal abort.
  *
  * @example
  * ```typescript
@@ -158,11 +158,13 @@ export class WebMcpExporter {
             name: tool.name,
             description: tool.description || tool.title || tool.name,
             inputSchema: tool.inputSchema,
-            execute: async (input) => {
+            execute: async (input, options) => {
                 let result: McpToolResult;
                 try {
-                    result = await this._client.callTool(tool.name, input ?? {});
+                    result = await this._client.callTool(tool.name, input ?? {}, options?.signal ? { signal: options.signal } : undefined);
                 } catch (error) {
+                    // Cancelled by the agent: nobody is waiting for a result.
+                    if (options?.signal?.aborted) throw error;
                     // A protocol error (unknown tool, bad params) is returned
                     // as a tool error, so the agent reads it instead of a bare
                     // OperationError.
