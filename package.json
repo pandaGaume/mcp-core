@@ -76,6 +76,7 @@
         "typecheck": "tsc -p tsconfig.json --noEmit",
         "test": "vitest run",
         "test:watch": "vitest",
+        "test:browser": "npm run build && node e2e/webmcp/run.mjs",
         "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
         "lint:fix": "eslint \"src/**/*.ts\" \"tests/**/*.ts\" --fix",
         "format": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",

@@ -1,0 +1,252 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>mcp-core WebMCP, real browser</title>
+<!--
+    Scenarios for e2e/webmcp/run.mjs. Each one runs the built dist/ against the
+    browser's own document.modelContext and records a check; window.runAll()
+    returns { checks, notes }. Notes describe the browser, never a failure of
+    mcp-core.
+-->
+<script type="module">
+    import { LoopbackTransport, McpAdapterBase, McpBehavior, McpClient, McpServerBuilder, McpToolResults } from "/dist/index.js";
+    import { WebMcpAdapter, WebMcpBehavior, WebMcpExporter, getModelContext } from "/dist/web/index.js";
+
+    const mc = document.modelContext;
+    const checks = [];
+    const notes = [];
+
+    // What mcp-core hands to registerTool, before the browser keeps or drops
+    // any of it.
+    const definitions = new Map();
+    const registerTool = mc.registerTool.bind(mc);
+    mc.registerTool = (tool, options) => {
+        definitions.set(tool.name, tool);
+        return registerTool(tool, options);
+    };
+    const check = (name, ok, detail) => checks.push({ name, ok: !!ok, ...(detail === undefined ? {} : { detail }) });
+    const settle = (ms = 50) => new Promise((r) => setTimeout(r, ms));
+    let toolchanges = 0;
+    mc.addEventListener("toolchange", () => toolchanges++);
+
+    // ── A server with a few tools ─────────────────────────────────────────────
+    class PlantAdapter extends McpAdapterBase {
+        value = 0;
+        signals = [];
+        constructor() {
+            super("plant");
+        }
+        async readResourceAsync() {
+            return undefined;
+        }
+        async executeToolAsync(_uri, tool, args, request) {
+            if (tool === "gauge_set") {
+                this.value = Number(args.value);
+                return McpToolResults.json({ value: this.value });
+            }
+            if (tool === "gauge_read") return McpToolResults.text(`gauge is ${this.value}`);
+            if (tool === "gauge_fail") return McpToolResults.error("the gauge is locked");
+            if (tool === "slow_wait") {
+                this.signals.push(request?.signal);
+                await new Promise((resolve) => request?.signal?.addEventListener("abort", resolve, { once: true }));
+                return McpToolResults.text("stopped");
+            }
+            return McpToolResults.error(`unknown ${tool}`);
+        }
+    }
+    class PlantBehavior extends McpBehavior {
+        constructor(adapter) {
+            super(adapter, { namespace: "plant" });
+        }
+        _buildTools() {
+            return [
+                {
+                    name: "gauge_set",
+                    title: "Set gauge",
+                    description: "Set the gauge.",
+                    inputSchema: { type: "object", properties: { value: { type: "number" } }, required: ["value"] },
+                    outputSchema: { type: "object", properties: { value: { type: "number" } } },
+                    annotations: { destructiveHint: true },
+                },
+                { name: "gauge_read", description: "Read the gauge.", inputSchema: { type: "object" }, annotations: { readOnlyHint: true } },
+                { name: "gauge_fail", description: "Always fails.", inputSchema: { type: "object" } },
+                { name: "slow_wait", description: "Waits until cancelled.", inputSchema: { type: "object" } },
+                { name: "bad name!", description: "Not a WebMCP name.", inputSchema: { type: "object" } },
+            ];
+        }
+    }
+    class ExtraBehavior extends McpBehavior {
+        constructor() {
+            super(new PlantAdapter(), { namespace: "extra" });
+        }
+        _buildTools() {
+            return [{ name: "extra_ping", description: "Ping.", inputSchema: { type: "object" } }];
+        }
+    }
+
+    window.runAll = async () => {
+        check("getModelContext() finds the real registry", getModelContext() === mc);
+
+        // ── 1. MCP server -> WebMCP ───────────────────────────────────────────
+        const plant = new PlantAdapter();
+        const [serverEnd, clientEnd] = LoopbackTransport.createPair();
+        const server = new McpServerBuilder().withName("plant").withTransport(serverEnd).register(new PlantBehavior(plant)).build();
+        await server.start();
+        const errors = [];
+        const exporter = new WebMcpExporter(new McpClient({ name: "webmcp", version: "1.0.0" }, clientEnd), { onError: (e) => errors.push(e.message) });
+        await exporter.start();
+
+        const listed = await mc.getTools();
+        const byName = Object.fromEntries(listed.map((t) => [t.name, t]));
+        check(
+            "exporter: tools registered in the real registry",
+            ["gauge_set", "gauge_read", "gauge_fail", "slow_wait"].every((n) => byName[n]),
+            listed.map((t) => t.name)
+        );
+        check("exporter: invalid name refused and reported", !byName["bad name!"] && errors.some((e) => e.includes("bad name!")), errors);
+        check("exporter: title and inputSchema reach the registry", byName.gauge_set?.title === "Set gauge" && byName.gauge_set?.inputSchema?.required?.[0] === "value", {
+            title: byName.gauge_set?.title,
+            inputSchema: byName.gauge_set?.inputSchema,
+        });
+        check(
+            "exporter: outputSchema handed to registerTool",
+            definitions.get("gauge_set")?.outputSchema?.properties?.value?.type === "number",
+            definitions.get("gauge_set")?.outputSchema
+        );
+        if (!byName.gauge_set?.outputSchema) notes.push("this browser drops outputSchema: getTools() does not return it");
+        check("exporter: destructiveHint -> consequentialHint", byName.gauge_set?.annotations?.consequentialHint === true, byName.gauge_set?.annotations);
+        check("exporter: readOnlyHint kept", byName.gauge_read?.annotations?.readOnlyHint === true, byName.gauge_read?.annotations);
+        check("registry reports the page origin", byName.gauge_set?.origin === location.origin, byName.gauge_set?.origin);
+
+        const set = await mc.executeTool(byName.gauge_set, { value: 7 });
+        check("executeTool: structured result, serialized by the browser", set === '{"value":7}' && plant.value === 7, set);
+        const read = await mc.executeTool(byName.gauge_read, {});
+        check("executeTool: text result as the MCP result", JSON.parse(read).content?.[0]?.text === "gauge is 7", read);
+        const fail = await mc.executeTool(byName.gauge_fail, {});
+        check("executeTool: tool error returned, readable by the agent", JSON.parse(fail).isError === true && fail.includes("locked"), fail);
+
+        // Duplicate name: the real registry refuses, the exporter reports.
+        let duplicate;
+        try {
+            await mc.registerTool({ name: "gauge_set", description: "dup", execute: async () => ({}) });
+            duplicate = "accepted";
+        } catch (e) {
+            duplicate = e.name;
+        }
+        check("registry refuses a duplicate name", duplicate === "InvalidStateError", duplicate);
+
+        // Live list: a behavior registered on the server appears, then goes.
+        const extra = new ExtraBehavior();
+        const before = toolchanges;
+        server.register(extra);
+        await settle(200);
+        let names = (await mc.getTools()).map((t) => t.name);
+        check("exporter follows list_changed: new tool appears", names.includes("extra_ping") && toolchanges > before, { names, toolchanges: toolchanges - before });
+        server.unregister(extra);
+        await settle(200);
+        names = (await mc.getTools()).map((t) => t.name);
+        check("exporter follows list_changed: removed tool goes", !names.includes("extra_ping"), names);
+
+        // Cancellation: the browser's executeTool signal reaches the adapter.
+        const controller = new AbortController();
+        const slow = mc.executeTool(byName.slow_wait, {}, { signal: controller.signal });
+        await settle(100);
+        controller.abort();
+        let slowOutcome;
+        try {
+            slowOutcome = "resolved " + (await slow);
+        } catch (e) {
+            slowOutcome = e.name;
+        }
+        await settle(100);
+        check("cancel: executeTool rejects on abort", slowOutcome !== undefined && !slowOutcome.startsWith("resolved"), slowOutcome);
+        check("cancel: server request signal aborted", plant.signals[0]?.aborted === true, { aborted: plant.signals[0]?.aborted, reason: String(plant.signals[0]?.reason) });
+
+        // ── 2. Page's own WebMCP tools -> MCP client ──────────────────────────
+        const pageSignals = [];
+        await mc.registerTool({
+            name: "page_sum",
+            title: "Sum",
+            description: "Adds two numbers.",
+            inputSchema: { type: "object", properties: { a: { type: "number" }, b: { type: "number" } } },
+            annotations: { readOnlyHint: true, untrustedContentHint: true },
+            execute: async ({ a, b }) => ({ total: a + b }),
+        });
+        await mc.registerTool({
+            name: "page_boom",
+            description: "Throws.",
+            execute: async () => {
+                throw new Error("secret page reason");
+            },
+        });
+        await mc.registerTool({
+            name: "page_wait",
+            description: "Waits until cancelled.",
+            execute: (_input, { signal }) => {
+                pageSignals.push(signal);
+                return new Promise((resolve) => signal.addEventListener("abort", () => resolve({ stopped: true }), { once: true }));
+            },
+        });
+
+        const adapter = new WebMcpAdapter({ filter: (t) => t.name.startsWith("page_") });
+        await adapter.start();
+        const [s2, c2] = LoopbackTransport.createPair();
+        await new McpServerBuilder().withName("page").withTransport(s2).register(new WebMcpBehavior(adapter)).build().start();
+        const client = new McpClient({ name: "agent", version: "1.0.0" }, c2);
+        await client.connect();
+        let clientChanges = 0;
+        client.onToolsChanged.subscribe(() => clientChanges++);
+
+        const tools = await client.listTools();
+        const sum = tools.find((t) => t.name === "page_sum");
+        check(
+            "adapter: page tools served over MCP, exported ones filtered out",
+            tools
+                .map((t) => t.name)
+                .sort()
+                .join() === "page_boom,page_sum,page_wait",
+            tools.map((t) => t.name)
+        );
+        check("adapter: hints mapped back", sum?.annotations?.readOnlyHint === true && sum?.annotations?.openWorldHint === true, sum?.annotations);
+        check("adapter: origin kept in _meta", sum?._meta?.["io.cyanmycelium/webmcp"]?.origin === location.origin, sum?._meta);
+
+        const sumResult = await client.callTool("page_sum", { a: 2, b: 3 });
+        check("adapter: call runs through the real executeTool", sumResult.structuredContent?.total === 5, sumResult);
+        const boom = await client.callTool("page_boom", {});
+        check("adapter: page failure becomes isError", boom.isError === true, boom);
+        check("adapter: the page's reason does not leak", !JSON.stringify(boom).includes("secret page reason"), boom.content?.[0]?.text);
+
+        const late = new AbortController();
+        await mc.registerTool({ name: "page_late", description: "Registered later.", execute: async () => ({ late: true }) }, { signal: late.signal });
+        await settle(200);
+        check("adapter follows toolchange: late tool appears", clientChanges >= 1 && (await client.listTools()).some((t) => t.name === "page_late"), { clientChanges });
+        const changesBefore = clientChanges;
+        late.abort();
+        await settle(200);
+        check("adapter follows toolchange: aborted registration goes", clientChanges > changesBefore && !(await client.listTools()).some((t) => t.name === "page_late"), {
+            clientChanges,
+        });
+
+        const cancel = new AbortController();
+        const waiting = client.callTool("page_wait", {}, { signal: cancel.signal });
+        await settle(100);
+        cancel.abort("user moved on");
+        let waitOutcome;
+        try {
+            waitOutcome = "resolved";
+            await waiting;
+        } catch (e) {
+            waitOutcome = e.name;
+        }
+        await settle(100);
+        check("cancel: MCP client rejects with AbortError", waitOutcome === "AbortError", waitOutcome);
+        check("cancel: page tool signal aborted", pageSignals[0]?.aborted === true, { aborted: pageSignals[0]?.aborted });
+
+        exporter.stop();
+        await settle(100);
+        names = (await mc.getTools()).map((t) => t.name);
+        check("exporter.stop() unregisters its tools", !names.some((n) => n.startsWith("gauge_") || n === "slow_wait"), names);
+
+        return { checks, notes };
+    };
+    window.ready = true;
+</script>
