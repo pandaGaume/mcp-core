@@ -10,6 +10,7 @@ import type {
     McpLoggingLevel,
     McpPrompt,
     McpPromptResult,
+    McpRequestOptions,
     McpResource,
     McpResourceContent,
     McpResourceTemplate,
@@ -28,6 +29,25 @@ interface PendingRequest {
     resolve: (result: unknown) => void;
     reject: (error: Error) => void;
     timer: ReturnType<typeof setTimeout>;
+    /** Detaches the abort listener of a call made with a signal. */
+    release?: () => void;
+}
+
+/** The error a cancelled call rejects with, shaped like the platform's. */
+function abortError(signal: AbortSignal): Error {
+    const reason: unknown = signal.reason;
+    if (reason instanceof Error) return reason;
+    const error = new Error(typeof reason === "string" && reason ? reason : "The operation was aborted");
+    error.name = "AbortError";
+    return error;
+}
+
+/** A human-readable reason for `notifications/cancelled`, from an abort reason. */
+function reasonOf(signal: AbortSignal): string | undefined {
+    const reason: unknown = signal.reason;
+    if (typeof reason === "string") return reason || undefined;
+    if (reason instanceof Error && reason.message && reason.message !== "This operation was aborted") return reason.message;
+    return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -219,8 +239,8 @@ export class McpClient implements IMcpClient {
         return this._listAll<McpResourceTemplate>("resources/templates/list", "resourceTemplates");
     }
 
-    public async readResource(uri: string): Promise<McpResourceContent> {
-        const r = await this._request("resources/read", { uri });
+    public async readResource(uri: string, options?: McpRequestOptions): Promise<McpResourceContent> {
+        const r = await this._request("resources/read", { uri }, options);
         return (r as { contents: McpResourceContent[] }).contents[0];
     }
 
@@ -240,8 +260,8 @@ export class McpClient implements IMcpClient {
         return this._listAll<McpPrompt>("prompts/list", "prompts");
     }
 
-    public async getPrompt(name: string, args: Record<string, string> = {}): Promise<McpPromptResult> {
-        return (await this._request("prompts/get", { name, arguments: args })) as McpPromptResult;
+    public async getPrompt(name: string, args: Record<string, string> = {}, options?: McpRequestOptions): Promise<McpPromptResult> {
+        return (await this._request("prompts/get", { name, arguments: args }, options)) as McpPromptResult;
     }
 
     // ── Completion and logging ───────────────────────────────────────────
@@ -261,8 +281,8 @@ export class McpClient implements IMcpClient {
         return this._listAll<McpTool>("tools/list", "tools");
     }
 
-    public async callTool(name: string, args: Record<string, unknown>): Promise<McpToolResult> {
-        const r = await this._request("tools/call", { name, arguments: args });
+    public async callTool(name: string, args: Record<string, unknown>, options?: McpRequestOptions): Promise<McpToolResult> {
+        const r = await this._request("tools/call", { name, arguments: args }, options);
         return r as McpToolResult;
     }
 
@@ -300,20 +320,56 @@ export class McpClient implements IMcpClient {
 
     // ── JSON-RPC internals ───────────────────────────────────────────────
 
-    private _request(method: string, params?: unknown): Promise<unknown> {
+    /**
+     * Sends one request and settles with its answer.
+     *
+     * A request that times out or whose `signal` aborts is withdrawn with
+     * `notifications/cancelled`, so the server can stop working on it, and any
+     * answer that still arrives is ignored. `initialize` is never cancelled:
+     * the spec forbids it.
+     */
+    private _request(method: string, params?: unknown, options?: McpRequestOptions): Promise<unknown> {
+        const signal = options?.signal;
+        if (signal?.aborted) return Promise.reject(abortError(signal));
+
         const id = this._nextId++;
 
         return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => {
+            const withdraw = (reason: string | undefined, error: Error): void => {
+                const pending = this._pending.get(id);
+                if (!pending) return;
                 this._pending.delete(id);
-                reject(new Error(`McpClient: request "${method}" (id=${id}) timed out after ${this._timeoutMs}ms`));
+                clearTimeout(pending.timer);
+                pending.release?.();
+                if (method !== "initialize") this._sendCancelled(id, reason);
+                reject(error);
+            };
+
+            const timer = setTimeout(() => {
+                withdraw(`timed out after ${this._timeoutMs}ms`, new Error(`McpClient: request "${method}" (id=${id}) timed out after ${this._timeoutMs}ms`));
             }, this._timeoutMs);
 
-            this._pending.set(id, { resolve, reject, timer });
+            const pending: PendingRequest = { resolve, reject, timer };
+            if (signal) {
+                const onAbort = (): void => withdraw(reasonOf(signal), abortError(signal));
+                signal.addEventListener("abort", onAbort, { once: true });
+                pending.release = () => signal.removeEventListener("abort", onAbort);
+            }
+            this._pending.set(id, pending);
 
             const msg = JSON.stringify({ jsonrpc: "2.0", id, method, params });
             this._transport.send(msg);
         });
+    }
+
+    /** Tells the server to stop working on request `id`. Best effort: a closed transport sends nothing. */
+    private _sendCancelled(id: number, reason: string | undefined): void {
+        if (!this._transport.isOpen) return;
+        try {
+            this._transport.send(JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: reason ? { requestId: id, reason } : { requestId: id } }));
+        } catch {
+            // The request is already withdrawn locally; nothing else to do.
+        }
     }
 
     private _notify(method: string, params?: unknown): void {
@@ -343,6 +399,7 @@ export class McpClient implements IMcpClient {
             if (!pending) return;
             this._pending.delete(msg.id);
             clearTimeout(pending.timer);
+            pending.release?.();
 
             if (msg.error) {
                 pending.reject(new Error(`MCP error ${msg.error.code}: ${msg.error.message}`));
@@ -396,6 +453,7 @@ export class McpClient implements IMcpClient {
     private _rejectAllPending(reason: string): void {
         for (const [id, pending] of this._pending) {
             clearTimeout(pending.timer);
+            pending.release?.();
             pending.reject(new Error(reason));
             this._pending.delete(id);
         }

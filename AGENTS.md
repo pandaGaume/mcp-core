@@ -102,6 +102,19 @@ async completeAsync(ref: McpCompletionReference, argument: McpCompletionArgument
 - `completion/complete` goes to the behavior that lists the prompt (`ref/prompt`) or declares the `uriTemplate` (`ref/resource`).
 - Logging is **off by default**. `withOptions({ logging: true })` advertises it, answers `logging/setLevel`, and makes `server.log(level, data, logger?)` emit `notifications/message` at or above the client's level (`info` until set).
 
+## 5b. Cancellation (1.5.0)
+
+```ts
+const controller = new AbortController();
+const result = client.callTool("report_build", { year: 2026 }, { signal: controller.signal });
+controller.abort("user moved on"); // sends notifications/cancelled, rejects with AbortError
+```
+
+- `callTool`, `readResource`, `getPrompt` take `{ signal }`. A timeout cancels the same way. A late answer is ignored.
+- Server side, `request?.signal` (in `IMcpRequestContext`) aborts on `notifications/cancelled` and on disconnect. Pass it to whatever can stop (`fetch`, a query); ignoring it is fine, the operation just runs to the end.
+- A cancelled request gets **no** answer from the server. An unknown or finished id is ignored. `initialize` cannot be cancelled.
+- Through a CyanMycelium broker, cancellation needs a broker newer than 1.11.0: the broker rewrites request ids and translates `requestId` back to its own.
+
 ## 6. Transports and what `start()` means
 
 `await server.start()` resolves when **the transport reports itself open**, not when a peer accepted it. Over a tunnel (broker slot, relay, proxy) a refusal arrives afterwards. Subscribe before starting:
@@ -136,7 +149,7 @@ new McpServerBuilder().withName("page").withTransport(transport).register(new We
 - Results: `structuredContent` when the call succeeded with one, otherwise the MCP result object. Errors are **returned**, never thrown: WebMCP turns a rejection into a bare `OperationError` the agent cannot read.
 - The exporter follows `tools/list_changed`; the adapter follows `toolchange`. Both report through `onError` (default `console.warn`) and keep going.
 - Names must match `[A-Za-z0-9_.-]{1,128}`; others are left out. A name two documents register: the first wins.
-- No cancellation yet. Through the broker it also needs a broker change (ids are rewritten there), so the two land together.
+- Cancellation crosses both ways (§5b): the agent's `signal` withdraws the server call; an MCP cancellation aborts the page tool's `signal`.
 
 ## 7. Spec coverage
 
@@ -146,6 +159,7 @@ Every request a client may send is listed per revision in `MCP_SERVER_REQUEST_ME
 |---|---|
 | `initialize`, `ping`, `tools/*`, `resources/list`, `resources/templates/list`, `resources/read` | yes |
 | `resources/subscribe`, `resources/unsubscribe`, `prompts/*`, `completion/complete`, `logging/setLevel` | yes since 1.3.0 |
+| `notifications/cancelled` | yes since 1.5.0, both ends (§5b) |
 | `tasks/*` (experimental in `2025-11-25`) | declared unsupported, `-32601` |
 | sampling, roots, elicitation (server-to-client) | the client answers `-32601` |
 | OAuth client flow | not implemented; pass a token through transport `headers` |

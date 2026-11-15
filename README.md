@@ -134,7 +134,8 @@ Revisions accepted during the handshake: `2025-11-25` (default), `2025-06-18`, `
 | Binary resources (`blob`), `audio` and `resource_link` content blocks | yes |
 | `ping` (both directions) | yes |
 | Pagination (`cursor` / `nextCursor`) | client follows it; server returns single pages |
-| Progress, cancellation, sampling, roots, elicitation, tasks | not yet |
+| `notifications/cancelled`, both ends: `{ signal }` on client calls, `request.signal` in adapters | yes (1.5.0) |
+| Progress, sampling, roots, elicitation, tasks | not yet |
 | Transports | stdio and Streamable HTTP, both roles each, plus loopback |
 | Streamable HTTP: sessions, `MCP-Protocol-Version`, SSE resumption, `DELETE` teardown | yes |
 | OAuth 2.1 resource server: RFC 9728 metadata, `WWW-Authenticate` challenges, audience-bound tokens, 401/403 | yes, server side |
@@ -507,6 +508,15 @@ A custom `IMcpServerHandlers` written before 1.3.0 keeps working: the handlers f
 
 **Tool list changes (1.5.0).** An adapter whose tools come and go calls `this._forwardToolsChanged()`; `McpBehavior` drops its cached tool list and raises `onToolsListChanged`, and the server sends `notifications/tools/list_changed`. A behavior written from scratch implements `onToolsListChanged` itself, or a subclass of `McpBehavior` calls `this._invalidateTools()`. Registering or unregistering a behavior that has tools now announces it too. A behavior whose tools only arrive at runtime declares `dynamicTools = true`, so `tools` is advertised even while its list is still empty.
 
+**Cancellation (1.5.0).** `callTool`, `readResource` and `getPrompt` accept `{ signal }`. Aborting it, or a timeout, withdraws the request with `notifications/cancelled` and rejects with an `AbortError`; a late answer is ignored. On the server, the request's `IMcpRequestContext.signal` aborts, so an adapter can stop early, and no answer is sent for the cancelled request. A session that closes aborts whatever it still had running. `initialize` is never cancelled.
+
+```ts
+async executeToolAsync(uri: string, tool: string, args: Record<string, unknown>, request?: IMcpRequestContext) {
+    const rows = await this._db.query(args.sql as string, { signal: request?.signal }); // stops when the client cancels
+    return McpToolResults.json({ rows });
+}
+```
+
 ## WebMCP (1.5.0, experimental)
 
 [WebMCP](https://webmachinelearning.github.io/webmcp/) lets a web page register tools with the browser's own agent through `document.modelContext`. It has no resources, prompts or JSON-RPC, so it is not a transport: `@cyanmycelium/mcp-core/web` bridges it to the behavior stack, in both directions. The API follows the Community Group draft of 13 November 2026 and still moves; every access to `document.modelContext` goes through `getModelContext()`.
@@ -547,7 +557,7 @@ A failure is returned, never thrown: WebMCP hands a rejected callback to its cal
 Limits, stated plainly:
 
 - Tool names must be 1 to 128 of `A-Z a-z 0-9 _ - .`. Others are reported through `onError` and left out.
-- Cancellation is not forwarded yet: a call the agent cancels still runs to its end.
+- Cancellation crosses both ways: the agent's `signal` withdraws the server call, and an MCP cancellation aborts the page tool's `signal`.
 - Two documents registering one name: the first keeps it. Running both bridges on one server would re-import the exported tools; pass a `filter`.
 - A page tool with an argument named `uri` is routed by the server as a resource URI (see `tools/call` routing), and answers `-32002`.
 

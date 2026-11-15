@@ -103,7 +103,7 @@ function isLoggingLevel(value: unknown): value is McpLoggingLevel {
  * what another one, or the server, sees of the same request. A `_meta` that is
  * not a plain object is not metadata the spec defines, and is left out.
  */
-function requestContextOf(req: JsonRpcRequest, sequence: number): IMcpRequestContext {
+function requestContextOf(req: JsonRpcRequest, sequence: number, signal: AbortSignal | undefined): IMcpRequestContext {
     const meta = (req.params as { _meta?: unknown } | undefined)?._meta;
     const usable = typeof meta === "object" && meta !== null && !Array.isArray(meta);
     return Object.freeze({
@@ -111,7 +111,16 @@ function requestContextOf(req: JsonRpcRequest, sequence: number): IMcpRequestCon
         requestId: req.id,
         method: req.method,
         ...(usable ? { meta: Object.freeze({ ...(meta as Record<string, unknown>) }) } : {}),
+        ...(signal ? { signal } : {}),
     });
+}
+
+/**
+ * Key of a request in the in-flight map. JSON-RPC ids are strings or numbers,
+ * and `1` and `"1"` are two different requests.
+ */
+function inflightKey(id: string | number): string {
+    return `${typeof id}:${id}`;
 }
 
 /**
@@ -207,6 +216,12 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
 
     /** Monotonic correlation sequence for runtime requests served by this instance. */
     private _requestSequence = 0;
+
+    /**
+     * Requests being served, by JSON-RPC id, with the controller that cancels
+     * them. `initialize` is never listed: the spec forbids cancelling it.
+     */
+    private readonly _inflight = new Map<string, AbortController>();
 
     // ── Grammar ──────────────────────────────────────────────────────────────
 
@@ -1022,6 +1037,9 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         this._sessionGrammar = undefined; // grammar must be re-resolved on reconnection
         this._currentGrammarKey = undefined;
         this._subscriptions.clear(); // subscriptions belong to the session, not the server
+        // Work still running belongs to a session that is gone: stop it.
+        for (const controller of this._inflight.values()) controller.abort(Object.assign(new Error("Session closed"), { name: "AbortError" }));
+        this._inflight.clear();
         this._logLevel = DEFAULT_LOGGING_LEVEL;
         this._clearIdleTimer();
         this._onDisconnected?.emit();
@@ -1078,7 +1096,40 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
             return;
         }
 
-        this._send(await this._dispatch(msg as JsonRpcRequest));
+        const req = msg as JsonRpcRequest;
+        if (req.method === "initialize") {
+            this._send(await this._dispatch(req));
+            return;
+        }
+
+        const key = inflightKey(req.id);
+        const controller = new AbortController();
+        this._inflight.set(key, controller);
+        let response: JsonRpcResponse;
+        try {
+            response = await this._dispatch(req);
+        } finally {
+            if (this._inflight.get(key) === controller) this._inflight.delete(key);
+        }
+        // A cancelled request gets no answer: the peer has already forgotten it.
+        if (!controller.signal.aborted) this._send(response);
+    }
+
+    /**
+     * Handles `notifications/cancelled`: aborts the request's signal, so an
+     * operation that listens can stop, and drops its answer. An unknown or
+     * finished id is ignored, as the spec allows: the notification may simply
+     * have crossed the answer.
+     */
+    private _cancelRequest(params: unknown): void {
+        const { requestId, reason } = (params ?? {}) as { requestId?: unknown; reason?: unknown };
+        if (typeof requestId !== "string" && typeof requestId !== "number") return;
+        const controller = this._inflight.get(inflightKey(requestId));
+        if (!controller) return;
+        this._inflight.delete(inflightKey(requestId));
+        const error = new Error(typeof reason === "string" && reason ? reason : "Request cancelled by the client");
+        error.name = "AbortError";
+        controller.abort(error);
     }
 
     /**
@@ -1091,6 +1142,9 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
             case "notifications/initialized":
                 // Client has finished its own initialisation and is ready to send requests.
                 this._sessionReady = true;
+                break;
+            case "notifications/cancelled":
+                this._cancelRequest(notification.params);
                 break;
             // All other notifications are intentionally ignored.
         }
@@ -1324,7 +1378,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     private _requestContextOf(req: JsonRpcRequest): IMcpRequestContext {
         if (this._requestSequence >= Number.MAX_SAFE_INTEGER) throw new Error("MCP request sequence exhausted");
         this._requestSequence += 1;
-        return requestContextOf(req, this._requestSequence);
+        return requestContextOf(req, this._requestSequence, this._inflight.get(inflightKey(req.id))?.signal);
     }
 
     /**

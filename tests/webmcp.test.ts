@@ -60,12 +60,12 @@ class FakeModelContext extends EventTarget implements WebMcpModelContext {
         }));
     }
 
-    async executeTool(tool: WebMcpRegisteredTool, input: object = {}): Promise<string> {
+    async executeTool(tool: WebMcpRegisteredTool, input: object = {}, options?: { signal?: AbortSignal }): Promise<string> {
         const entry = [...this.registry.values()].find((e) => e.def.name === tool.name && e.origin === tool.origin);
         if (!entry) throw new DOMException(`"${tool.name}" is not registered`, "NotFoundError");
         let value: unknown;
         try {
-            value = await entry.def.execute(input as Record<string, unknown>, { signal: new AbortController().signal });
+            value = await entry.def.execute(input as Record<string, unknown>, { signal: options?.signal ?? new AbortController().signal });
         } catch {
             throw new DOMException("The tool failed", "OperationError");
         }
@@ -75,10 +75,10 @@ class FakeModelContext extends EventTarget implements WebMcpModelContext {
     }
 
     /** Calls a registered tool the way a browser agent would. */
-    async call(name: string, input: Record<string, unknown> = {}): Promise<unknown> {
+    async call(name: string, input: Record<string, unknown> = {}, signal: AbortSignal = new AbortController().signal): Promise<unknown> {
         const entry = this.registry.get(name);
         if (!entry) throw new Error(`no tool ${name}`);
-        return entry.def.execute(input, { signal: new AbortController().signal });
+        return entry.def.execute(input, { signal });
     }
 
     private _changed(): void {

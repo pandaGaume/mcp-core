@@ -183,6 +183,15 @@ export interface IMcpRequestContext {
 
     /** The request's `params._meta`, or `undefined` when it carried none. */
     readonly meta?: Readonly<Record<string, unknown>>;
+
+    /**
+     * Aborted when the peer withdraws the request with
+     * `notifications/cancelled`, or when the session ends (1.5.0). An
+     * operation that can stop early listens to it; one that ignores it simply
+     * runs to the end. Either way the server sends no answer to a cancelled
+     * request, as the spec asks.
+     */
+    readonly signal?: AbortSignal;
 }
 
 /**
