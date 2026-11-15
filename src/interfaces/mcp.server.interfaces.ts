@@ -273,6 +273,9 @@ export interface IMcpServer {
     /** Sends `notifications/prompts/list_changed` to an initialized session. */
     notifyPromptsListChanged?(): void;
 
+    /** Sends `notifications/tools/list_changed` to an initialized session. */
+    notifyToolsListChanged?(): void;
+
     /**
      * Emits `notifications/message` when logging is enabled
      * ({@link IMcpServerOptions.logging}) and `level` is at or above the level

@@ -1,6 +1,10 @@
-[![npm](https://img.shields.io/npm/v/@cyanmycelium/mcp-core)](https://www.npmjs.com/package/@cyanmycelium/mcp-core)
+[![npm](https://img.shields.io/npm/v/@cyanmycelium/mcp-core)](https://www.npmjs.com/package/@cyanmycelium/mcp-core) [![mcp-broker: 1.6.1](docs/assets/mcp-broker-badge.svg)](https://github.com/pandaGaume/mcp-broker)
 [![CI](https://github.com/pandaGaume/mcp-core/actions/workflows/ci.yml/badge.svg)](https://github.com/pandaGaume/mcp-core/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
+<p align="center">
+  <img src="docs/assets/mcp-broker-family.png" alt="MCP Broker Family" width="64" height="64" />
+</p>
 
 # @cyanmycelium/mcp-core
 
@@ -65,7 +69,7 @@ Each layer is independently testable. Each layer can be swapped without touching
 | RFC 6570 URI templates with fallback matching | no | static index + template regex match |
 | Live resource change notifications | manual | `adapter.onResourcesChanged`, `onResourceContentChanged` |
 | Same tools across multiple backends | duplicate per backend | one Behavior, swap the Adapter |
-| Tree-shakeable browser/Node split | one bundle | subpath exports (`.`, `./server`, `./client`, `./llm`, `./node`) |
+| Tree-shakeable browser/Node split | one bundle | subpath exports (`.`, `./server`, `./client`, `./llm`, `./node`, `./web`) |
 
 ## Install
 
@@ -98,6 +102,8 @@ Both standard transports, both roles.
 | MCP client talking to a remote server | `mcp-core` | `StreamableHttpTransport` |
 | MCP server and client inside one process | `mcp-core` | `LoopbackTransport` |
 | MCP server inside a browser, exposed to the outside | `mcp-core` + [`mcp-broker-provider`](https://www.npmjs.com/package/@cyanmycelium/mcp-broker-provider) | `MultiplexTransport` |
+| An MCP server's tools offered to the browser's own agent (WebMCP) | `mcp-core` | `WebMcpExporter` (`/web`) |
+| A page's WebMCP tools served to an MCP client | `mcp-core` (+ `mcp-broker-provider` to leave the browser) | `WebMcpAdapter` + `WebMcpBehavior` (`/web`) |
 | Several servers federated behind one endpoint, with central auth | the above, plus [`mcp-broker`](https://www.npmjs.com/package/@cyanmycelium/mcp-broker) **run as a process** | n/a |
 | MCP client driving a third-party server as a subprocess (`npx some-mcp-server`) | `mcp-core` | `ChildProcessTransport` |
 
@@ -161,9 +167,10 @@ import { McpClient }                                               from "@cyanmy
 import { LlmClient }                                               from "@cyanmycelium/mcp-core/llm";
 import { StdioTransport, ChildProcessTransport,
          StreamableHttpTransport, StreamableHttpEndpoint }         from "@cyanmycelium/mcp-core/node"; // Node-only
+import { WebMcpExporter, WebMcpAdapter, WebMcpBehavior }          from "@cyanmycelium/mcp-core/web";  // WebMCP, browser
 ```
 
-Tree-shaking ensures browser bundles never pull `node:*` modules.
+Tree-shaking ensures browser bundles never pull `node:*` modules. `/web` is not re-exported from the root: like `/node`, it is the one entry that touches a platform object (`document.modelContext`), and only when called.
 
 The root entry point holds everything that depends on nothing: the behavior stack, protocol-version negotiation, and the OAuth pieces (metadata document, challenge building **and parsing**, canonical resource URI). They sit there rather than under `/node` because a browser client needs the same pieces in reverse: it parses the challenge a server builds.
 
@@ -497,6 +504,52 @@ On the client: `client.onResourceUpdated.subscribe(uri => ...)`, then `await cli
 **Logging.** Off by default, since a server that advertises `logging` promises to emit it. With `withOptions({ logging: true })` the server advertises it, answers `logging/setLevel`, and `server.log(level, data, logger?)` emits `notifications/message` at or above the level the client set (`info` until it sets one).
 
 A custom `IMcpServerHandlers` written before 1.3.0 keeps working: the handlers for these methods are optional, and the server falls back to its own.
+
+**Tool list changes (1.5.0).** An adapter whose tools come and go calls `this._forwardToolsChanged()`; `McpBehavior` drops its cached tool list and raises `onToolsListChanged`, and the server sends `notifications/tools/list_changed`. A behavior written from scratch implements `onToolsListChanged` itself, or a subclass of `McpBehavior` calls `this._invalidateTools()`. Registering or unregistering a behavior that has tools now announces it too. A behavior whose tools only arrive at runtime declares `dynamicTools = true`, so `tools` is advertised even while its list is still empty.
+
+## WebMCP (1.5.0, experimental)
+
+[WebMCP](https://webmachinelearning.github.io/webmcp/) lets a web page register tools with the browser's own agent through `document.modelContext`. It has no resources, prompts or JSON-RPC, so it is not a transport: `@cyanmycelium/mcp-core/web` bridges it to the behavior stack, in both directions. The API follows the Community Group draft of 13 November 2026 and still moves; every access to `document.modelContext` goes through `getModelContext()`.
+
+**Publishing a server's tools to the browser's agent.** `WebMcpExporter` drives the server through an ordinary `McpClient`, so grammars, `ToolSupport` and `isError` results apply as for any client, and follows `notifications/tools/list_changed`:
+
+```ts
+import { WebMcpExporter } from "@cyanmycelium/mcp-core/web";
+
+const [serverEnd, clientEnd] = LoopbackTransport.createPair();
+const server = new McpServerBuilder().withName("plant").withTransport(serverEnd).register(gauge).build();
+await server.start();
+const exporter = new WebMcpExporter(new McpClient({ name: "webmcp", version: "1.0.0" }, clientEnd));
+await exporter.start(); // exporter.stop() unregisters everything
+```
+
+**Serving a page's WebMCP tools to an MCP client.** `WebMcpAdapter` reads `getTools()` (plus `fromOrigins` for cross-origin iframes) and runs calls through `executeTool()`; `WebMcpBehavior` serves them. Published into a broker slot with `mcp-broker-provider`, the page's tools reach Claude Desktop or any other MCP client, and stay live as the page registers and drops them:
+
+```ts
+import { WebMcpAdapter, WebMcpBehavior } from "@cyanmycelium/mcp-core/web";
+
+const adapter = new WebMcpAdapter({ fromOrigins: ["https://widget.example"] });
+await adapter.start(); // reads the tools, then follows `toolchange`
+const server = new McpServerBuilder().withName("page").withTransport(transport).register(new WebMcpBehavior(adapter)).build();
+await server.start();
+```
+
+| MCP | WebMCP |
+|---|---|
+| `readOnlyHint` | `readOnlyHint` |
+| `destructiveHint` (not read-only) | `consequentialHint` |
+| `openWorldHint` | `untrustedContentHint` |
+| a successful result with `structuredContent` | that object |
+| any other result, `isError` included | the MCP result itself, `{ content, isError }` |
+
+A failure is returned, never thrown: WebMCP hands a rejected callback to its caller as a bare `OperationError` and drops the message, so the agent could not read it. In the other direction, an `OperationError` is all a page tool's failure says, and the adapter reports it as `isError`. A re-served tool keeps its WebMCP origin and hints under `_meta["io.cyanmycelium/webmcp"]`.
+
+Limits, stated plainly:
+
+- Tool names must be 1 to 128 of `A-Z a-z 0-9 _ - .`. Others are reported through `onError` and left out.
+- Cancellation is not forwarded yet: a call the agent cancels still runs to its end.
+- Two documents registering one name: the first keeps it. Running both bridges on one server would re-import the exported tools; pass a `filter`.
+- A page tool with an argument named `uri` is routed by the server as a resource URI (see `tools/call` routing), and answers `-32002`.
 
 ## URI templates (RFC 6570)
 

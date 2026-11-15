@@ -19,6 +19,7 @@
         "jsonrpc",
         "behavior",
         "grammar",
+        "webmcp",
         "cyanmycelium"
     ],
     "engines": {
@@ -61,6 +62,11 @@
             "types": "./dist/node/index.d.ts",
             "import": "./dist/node/index.js",
             "default": "./dist/node/index.js"
+        },
+        "./web": {
+            "types": "./dist/web/index.d.ts",
+            "import": "./dist/web/index.js",
+            "default": "./dist/web/index.js"
         }
     },
     "scripts": {
@@ -90,6 +96,6 @@
         "tslib": "^2.8.1",
         "tsup": "^8.5.1",
         "typescript": "^5.4.0",
-        "vitest": "^1.6.0"
+        "vitest": "^4.1.9"
     }
 }

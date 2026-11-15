@@ -7,6 +7,7 @@ export default defineConfig({
         "client/index": "src/client/index.ts",
         "llm/index": "src/llm/index.ts",
         "node/index": "src/node/index.ts",
+        "web/index": "src/web/index.ts",
     },
     format: ["esm"],
     dts: true,           // génère les .d.ts

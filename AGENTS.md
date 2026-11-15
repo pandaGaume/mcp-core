@@ -13,6 +13,8 @@ An engine-neutral implementation of the Model Context Protocol: server, client, 
 | Run it in a browser, or publish it into a CyanMycelium broker slot | `McpServerBuilder` + a transport from `@cyanmycelium/mcp-broker-provider` (`DirectTransport` / `MultiplexTransport`) |
 | Server and client in one process (tests, embedding) | `LoopbackTransport.createPair()` |
 | Drive someone else's server | `McpClient` + `ChildProcessTransport` (a command) or `StreamableHttpTransport` (a URL) |
+| Offer a server's tools to the browser's own agent (WebMCP) | `WebMcpExporter` from `/web`, over a `LoopbackTransport` pair (§6b) |
+| Serve a page's WebMCP tools to an MCP client | `WebMcpAdapter` + `WebMcpBehavior` from `/web` (§6b) |
 
 ## 2. What to import from where
 
@@ -21,9 +23,10 @@ import { McpAdapterBase, McpBehavior, McpToolResults } from "@cyanmycelium/mcp-c
 import { McpServer, McpServerBuilder, LoopbackTransport } from "@cyanmycelium/mcp-core/server";
 import { McpClient } from "@cyanmycelium/mcp-core/client";
 import { StdioTransport, ChildProcessTransport, StreamableHttpTransport, StreamableHttpEndpoint } from "@cyanmycelium/mcp-core/node"; // Node only
+import { WebMcpExporter, WebMcpAdapter, WebMcpBehavior } from "@cyanmycelium/mcp-core/web"; // WebMCP, browser (1.5.0)
 ```
 
-Everything also re-exports from the root. `/node` is the only entry that touches `node:*`; never import it in a browser bundle.
+Everything except `/node` and `/web` also re-exports from the root. `/node` is the only entry that touches `node:*`; never import it in a browser bundle. `/web` touches `document.modelContext`, and only when called.
 
 ## 3. The shape of a server
 
@@ -70,11 +73,13 @@ A behavior never sends a notification. It **reports a change**, and the server d
 |---|---|
 | `this._forwardResourceContentChanged(uri)` | `notifications/resources/updated`, **only** if that session subscribed to exactly `uri` |
 | `this._forwardResourceChanged()` | `notifications/resources/list_changed`; the server re-indexes resources first |
+| `this._forwardToolsChanged()` (1.5.0) | `notifications/tools/list_changed`; `McpBehavior` drops its cached tool list first |
 
 - The server advertises `resources: { subscribe: true, listChanged: true }` as soon as a behavior has a resource or a template, and answers `resources/subscribe` / `resources/unsubscribe` itself. Subscriptions are per session, matched byte for byte, and forgotten on disconnect.
 - Subscribing to a URI nothing can read is `-32002`. Unsubscribing never fails.
 - `McpBehavior` drops its cached copy of a changed resource before forwarding, so the client's re-read is fresh. Without the call, the root resource is served from cache forever.
-- A behavior written without `McpBehavior` implements the optional `onResourceUpdated`, `onResourcesListChanged` and `onPromptsChanged` event sources itself.
+- A behavior written without `McpBehavior` implements the optional `onResourceUpdated`, `onResourcesListChanged`, `onPromptsChanged` and `onToolsListChanged` event sources itself.
+- `register()` / `unregister()` of a behavior with tools also sends `tools/list_changed` (1.5.0). A behavior whose tools arrive at runtime sets `dynamicTools = true`, so `tools` is advertised while its list is still empty.
 - Content with no behavior behind it: `server.notifyResourceUpdated(uri)` returns whether anything was sent.
 - Client side: `client.onResourceUpdated.subscribe((uri) => ...)`, then `await client.subscribeResource(uri)`.
 - One server per HTTP session (`StreamableHttpEndpoint` does this): a subscription belongs to one client.
@@ -110,6 +115,29 @@ Log "connected" when the first `initialize` arrives, never after `start()`.
 
 `StreamableHttpEndpoint` refuses browser `Origin`s with `403 invalid_origin` unless listed in `allowedOrigins` (closed by default, compared verbatim: scheme, host, port, no trailing slash). Requests without `Origin` pass.
 
+## 6b. WebMCP (1.5.0, experimental)
+
+WebMCP (`document.modelContext`, W3C Web ML CG draft of 2026-11-13) is a tool registry inside the page, not a transport: no JSON-RPC, no resources, no prompts. `/web` bridges it both ways.
+
+```ts
+// The server's tools, offered to the browser's agent.
+const [serverEnd, clientEnd] = LoopbackTransport.createPair();
+const server = new McpServerBuilder().withName("plant").withTransport(serverEnd).register(gauge).build();
+await server.start();
+await new WebMcpExporter(new McpClient({ name: "webmcp", version: "1.0.0" }, clientEnd)).start();
+
+// The page's tools, served over MCP (e.g. into a broker slot).
+const adapter = new WebMcpAdapter({ fromOrigins: ["https://widget.example"] });
+await adapter.start(); // before server.start(), so the first tools/list has them
+new McpServerBuilder().withName("page").withTransport(transport).register(new WebMcpBehavior(adapter)).build();
+```
+
+- Hints: `readOnlyHint` = `readOnlyHint`, `destructiveHint` = `consequentialHint`, `openWorldHint` = `untrustedContentHint`.
+- Results: `structuredContent` when the call succeeded with one, otherwise the MCP result object. Errors are **returned**, never thrown: WebMCP turns a rejection into a bare `OperationError` the agent cannot read.
+- The exporter follows `tools/list_changed`; the adapter follows `toolchange`. Both report through `onError` (default `console.warn`) and keep going.
+- Names must match `[A-Za-z0-9_.-]{1,128}`; others are left out. A name two documents register: the first wins.
+- No cancellation yet. Through the broker it also needs a broker change (ids are rewritten there), so the two land together.
+
 ## 7. Spec coverage
 
 Every request a client may send is listed per revision in `MCP_SERVER_REQUEST_METHODS`. `tests/spec.coverage.test.ts` sends each one to a server and fails on `-32601` unless the method is in `MCP_SERVER_UNSUPPORTED_METHODS` with a reason. **When a new revision lands, add its methods there first**: the test then says what is missing.
@@ -139,6 +167,11 @@ A custom `IMcpServerHandlers` written before 1.3.0 keeps compiling and working: 
 | `logging/setLevel` answers `-32601` | logging is off | `withOptions({ logging: true })` |
 | `prompts` / `completions` not in the capabilities | no behavior returns prompts / implements `completeAsync` | add them to a behavior (§5) |
 | `-32602 Unknown tool` | the name is not in any behavior's `_buildTools()`, or the adapter declared it `Planned` / `None` | check `getToolSupport` |
+| A tool appeared at runtime, the client never sees it | the change was not reported | `_forwardToolsChanged()` in the adapter, or `_invalidateTools()` in the behavior |
+| `WebMcpExporter`/`WebMcpAdapter`: "document.modelContext is missing" | no WebMCP in this browser, or not a secure context | feature-detect with `getModelContext()` |
+| A WebMCP tool is not published | invalid name, another script registered that name first, or `Permissions-Policy: tools=()` (an iframe needs `allow="tools"`) | read `onError` |
+| A re-served WebMCP tool answers `-32002` | it takes an argument named `uri`, which the server routes as a resource URI | rename the argument on the page |
+| Each exported tool appears twice | exporter and adapter on one server re-import each other | `filter` on the adapter |
 
 ## 9. Anti-goals, stated plainly
 
