@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { IMessageTransport } from "../interfaces";
-import { isProtocolVersionSupported } from "../mcp.protocol";
+import { isProtocolVersionSupported, MCP_ERROR_CODES, MCP_META, MCP_STATELESS_PROTOCOL_VERSIONS } from "../mcp.protocol";
 import {
     bearerToken,
     buildChallengeHeader,
@@ -13,6 +13,7 @@ import {
     type ITokenValidator,
 } from "../mcp.auth";
 import { HttpSessionTransport } from "./streamable-http.session";
+import { decodeMcpHeaderValue, mcpNameOf, StatelessRequestTransport } from "./streamable-http.stateless";
 
 /**
  * Whatever serves one session, seen by the endpoint.
@@ -94,6 +95,15 @@ export interface IStreamableHttpEndpointOptions {
      */
     protocolVersions?: readonly string[];
 
+    /**
+     * Stateless revisions (2026-07-28 and later) served alongside the
+     * sessions: a POST without `Mcp-Session-Id` whose request carries its
+     * revision in `_meta` is served by a server built for that one request.
+     * `[]` turns stateless serving off.
+     * @default MCP_STATELESS_PROTOCOL_VERSIONS
+     */
+    statelessProtocolVersions?: readonly string[];
+
     /** Session id generator. @default `randomUUID` */
     sessionIdFactory?: () => string;
 
@@ -146,6 +156,8 @@ interface ISession {
 export class StreamableHttpEndpoint {
     private readonly _options: IStreamableHttpEndpointOptions;
     private readonly _sessions = new Map<string, ISession>();
+    /** Servers built for one stateless request each, until it is answered. */
+    private readonly _exchanges = new Set<{ readonly transport: StatelessRequestTransport; readonly server: IMcpSessionHandle }>();
 
     constructor(options: IStreamableHttpEndpointOptions) {
         this._options = options;
@@ -186,7 +198,7 @@ export class StreamableHttpEndpoint {
             }
 
             const version = header(req, "mcp-protocol-version");
-            if (version !== undefined && !isProtocolVersionSupported(version, this._options.protocolVersions)) {
+            if (version !== undefined && !isProtocolVersionSupported(version, this._options.protocolVersions) && !this._statelessVersions().includes(version)) {
                 return respond(res, 400, "unsupported_protocol_version", `Unsupported MCP-Protocol-Version: ${version}`);
             }
 
@@ -259,6 +271,9 @@ export class StreamableHttpEndpoint {
 
     /** Terminates every session and releases their servers. */
     async closeAll(): Promise<void> {
+        // A stateless server answers its open listens as it stops.
+        for (const exchange of [...this._exchanges]) await exchange.server.stop();
+        this._exchanges.clear();
         const sessions = [...this._sessions.values()];
         this._sessions.clear();
         for (const session of sessions) {
@@ -287,6 +302,11 @@ export class StreamableHttpEndpoint {
         const method = (frame as { method?: unknown }).method;
         const sessionId = header(req, "mcp-session-id");
 
+        // A request carrying its own revision, outside any session: 2026-07-28.
+        if (!sessionId && method !== "initialize" && this._statelessVersions().length > 0 && isStatelessFrame(frame)) {
+            return this._handleStateless(req, res, frame as IStatelessFrame, body, principal);
+        }
+
         // `initialize` is the one request that arrives without a session, and the
         // one whose response carries the session id back.
         if (method === "initialize" && !sessionId) {
@@ -299,6 +319,82 @@ export class StreamableHttpEndpoint {
         if (!session) return;
         session.principal = principal;
         return this._feed(session, body, res);
+    }
+
+    private _statelessVersions(): readonly string[] {
+        return this._options.statelessProtocolVersions ?? MCP_STATELESS_PROTOCOL_VERSIONS;
+    }
+
+    /**
+     * Serves one stateless request (2026-07-28): checks the headers against
+     * the body, builds a server for this request only, and keeps the exchange
+     * open until it is answered. A listen stays open until the client closes
+     * the stream, which cancels it.
+     */
+    private async _handleStateless(req: IncomingMessage, res: ServerResponse, frame: IStatelessFrame, body: string, principal?: IMcpPrincipal): Promise<void> {
+        const id = frame.id;
+        const meta = frame.params._meta;
+        const requested = meta[MCP_META.protocolVersion];
+        const refuse = (code: number, message: string, data?: unknown) => {
+            res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
+            res.end(JSON.stringify({ jsonrpc: "2.0", id: id ?? null, error: { code, message, ...(data !== undefined ? { data } : {}) } }));
+        };
+
+        const version = header(req, "mcp-protocol-version");
+        if (version === undefined || version !== requested) {
+            return refuse(
+                MCP_ERROR_CODES.headerMismatch,
+                `MCP-Protocol-Version header (${version ?? "missing"}) must equal params._meta["${MCP_META.protocolVersion}"] (${String(requested)})`
+            );
+        }
+        if (typeof requested !== "string" || !this._statelessVersions().includes(requested)) {
+            return refuse(MCP_ERROR_CODES.unsupportedProtocolVersion, `Unsupported protocol version: ${String(requested)}`, {
+                supported: [...this._statelessVersions()],
+                requested: String(requested),
+            });
+        }
+        if (typeof meta[MCP_META.clientCapabilities] !== "object" || meta[MCP_META.clientCapabilities] === null) {
+            return refuse(-32602, `Missing required params._meta["${MCP_META.clientCapabilities}"]`);
+        }
+        const declaredMethod = header(req, "mcp-method");
+        if (declaredMethod !== frame.method) {
+            return refuse(MCP_ERROR_CODES.headerMismatch, `Mcp-Method header (${declaredMethod ?? "missing"}) must equal the request method (${frame.method})`);
+        }
+        const expectedName = mcpNameOf(frame.method, frame.params);
+        if (expectedName !== undefined) {
+            const raw = header(req, "mcp-name");
+            if (raw === undefined || decodeMcpHeaderValue(raw) !== expectedName) {
+                return refuse(MCP_ERROR_CODES.headerMismatch, `Mcp-Name header must carry "${expectedName}" for ${frame.method}`);
+            }
+        }
+
+        // 2026-07-28 defines no client-to-server notification over HTTP: acknowledge and drop.
+        if (id === undefined) {
+            res.writeHead(202).end();
+            return;
+        }
+
+        // The transport reports its answer before the server exists to be named: hold it by reference.
+        const holder: { exchange?: { readonly transport: StatelessRequestTransport; readonly server: IMcpSessionHandle } } = {};
+        const transport = new StatelessRequestTransport(res, id, () => {
+            const exchange = holder.exchange;
+            if (!exchange) return;
+            this._exchanges.delete(exchange);
+            void exchange.server.stop();
+        });
+        const server = await this._options.createServer(transport, `stateless:${(this._options.sessionIdFactory ?? randomUUID)()}`, principal);
+        holder.exchange = { transport, server };
+        this._exchanges.add(holder.exchange);
+        await server.start();
+
+        // The client closing its end cancels the request (2026-07-28: no
+        // notifications/cancelled over HTTP); the server then stops.
+        res.on("close", () => {
+            if (!transport.isOpen) return;
+            transport.deliver(JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: id, reason: "stream closed by the client" } }));
+            transport.close();
+        });
+        transport.deliver(body);
     }
 
     private _handleGet(req: IncomingMessage, res: ServerResponse, principal?: IMcpPrincipal): void {
@@ -417,6 +513,19 @@ export class StreamableHttpEndpoint {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** A request written for a stateless revision: its revision is in `params._meta`. */
+interface IStatelessFrame {
+    readonly id?: string | number;
+    readonly method: string;
+    readonly params: { readonly _meta: Record<string, unknown> } & Record<string, unknown>;
+}
+
+function isStatelessFrame(frame: unknown): boolean {
+    const record = frame as { method?: unknown; params?: { _meta?: unknown } };
+    const meta = record.params?._meta;
+    return typeof record.method === "string" && typeof meta === "object" && meta !== null && !Array.isArray(meta) && MCP_META.protocolVersion in meta;
+}
 
 function header(req: IncomingMessage, name: string): string | undefined {
     const value = req.headers[name];

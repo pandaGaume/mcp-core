@@ -2,6 +2,7 @@ import type { IMcpServerHandlers, McpClientCapabilities, McpClientInfo, McpServe
 import type { IMcpBehavior, McpLoggingLevel } from "./mcp.behavior.interfaces";
 import type { IEventSource } from "./eventSource";
 import type { IMessageTransport } from "./mcp.transport.interfaces";
+import type { IMcpServerExtension } from "./mcp.extension.interfaces";
 import type { McpGrammar } from "../mcp.grammar";
 import type { McpGrammarStore } from "../mcp.grammarStore";
 import type { GrammarResolverOptions } from "../mcp.resolver";
@@ -104,6 +105,23 @@ export interface IMcpServerOptions {
      * capability, and one that does not emit any must not claim it.
      */
     logging?: boolean;
+
+    /**
+     * The stateless revisions (2026-07-28 and later) this server serves,
+     * newest first, alongside the `initialize` ones. `[]` makes the server
+     * handshake-only: a stateless request is then treated as an old client's.
+     *
+     * @default MCP_STATELESS_PROTOCOL_VERSIONS
+     */
+    statelessProtocolVersions?: readonly string[];
+
+    /**
+     * Caching hints put on cacheable stateless results (`server/discover`,
+     * the lists, `resources/read`) that did not set their own.
+     *
+     * @default `{ ttlMs: 0, cacheScope: "private" }`: never reuse, never share.
+     */
+    cache?: { readonly ttlMs: number; readonly cacheScope: "public" | "private" };
 }
 
 /**
@@ -185,6 +203,12 @@ export interface IMcpServerBuilder {
      * The server owns the protocol; opening and reconnecting are the transport's business.
      */
     withTransport(transport: IMessageTransport): IMcpServerBuilder;
+
+    /**
+     * Adds MCP extensions (see {@link IMcpServerExtension}). Optional so
+     * existing implementations of this interface keep compiling.
+     */
+    withExtension?(...extension: IMcpServerExtension[]): IMcpServerBuilder;
 
     build(): IMcpServer;
 }
@@ -282,6 +306,18 @@ export interface IMcpServer {
      * the client set. Returns whether it was sent.
      */
     log?(level: McpLoggingLevel, data: unknown, logger?: string): boolean;
+
+    /**
+     * Takes an MCP extension after construction. Optional, for the same
+     * source-compatibility reason as {@link onTransportError}.
+     */
+    registerExtension?(extension: IMcpServerExtension): IMcpServer;
+
+    /** The capabilities the client declared at `initialize`, `undefined` outside a session. */
+    readonly clientCapabilities?: McpClientCapabilities;
+
+    /** The settings the client declared for `extensionId`, `undefined` when it did not. */
+    clientExtension?(extensionId: string): Readonly<Record<string, unknown>> | undefined;
 }
 
 /**

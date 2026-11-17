@@ -1,4 +1,5 @@
 import { JsonRpcRequest, JsonRpcResponse } from "./mcp.jsonrpc.interfaces";
+import type { McpActionMetadata } from "./mcp.annotations.interfaces";
 
 // ---------------------------------------------------------------------------
 // Shared metadata primitives
@@ -269,6 +270,13 @@ export interface McpToolAnnotations {
 
     /** The tool touches an open world (the internet, say) rather than a closed domain. */
     openWorldHint?: boolean;
+
+    /**
+     * Action metadata, the experimental `io.modelcontextprotocol/action-metadata`
+     * extension: where input goes, where results come from, how consequential
+     * the call is. See `withActionMetadata()`.
+     */
+    "io.modelcontextprotocol/action-metadata"?: McpActionMetadata;
 }
 
 /**
@@ -334,6 +342,13 @@ export interface McpClientCapabilities {
     /** Indicates the client accepts task-augmented requests from the server. */
     tasks?: McpTasksCapability;
 
+    /**
+     * MCP extensions this peer supports, keyed by extension identifier
+     * (e.g. `"io.modelcontextprotocol/ui"`), each with its settings object.
+     * `{}` means "supported, no optional feature".
+     */
+    extensions?: McpExtensionsCapability;
+
     /** Non-standard features, keyed by name. */
     experimental?: { [feature: string]: unknown };
 }
@@ -346,6 +361,9 @@ export interface McpClientCapabilities {
  * is explicit that unknown fields are to be ignored, not rejected.
  */
 export type McpCapabilityFlag = { [option: string]: unknown };
+
+/** `capabilities.extensions`: extension identifier to settings object. */
+export type McpExtensionsCapability = { [extensionId: string]: { [setting: string]: unknown } };
 
 /**
  * Support for task-augmented requests, the experimental mechanism added in
@@ -406,6 +424,13 @@ export interface McpServerCapabilities {
 
     /** Indicates the server accepts task-augmented requests from the client. */
     tasks?: McpTasksCapability;
+
+    /**
+     * MCP extensions this peer supports, keyed by extension identifier
+     * (e.g. `"io.modelcontextprotocol/ui"`), each with its settings object.
+     * `{}` means "supported, no optional feature".
+     */
+    extensions?: McpExtensionsCapability;
 
     /** Non-standard features, keyed by name. */
     experimental?: { [feature: string]: unknown };

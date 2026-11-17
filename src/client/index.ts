@@ -1,1 +1,1 @@
-export { McpClient } from "./mcp.client";
+export { McpClient, McpRpcError } from "./mcp.client";

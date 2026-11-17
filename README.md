@@ -117,6 +117,8 @@ The WebSocket tunnel to that broker is CyanMycelium topology rather than protoco
 
 ## Protocol coverage
 
+Stateless revision `2026-07-28` (unreleased): served alongside the handshake revisions by the same server, and spoken by `McpClient` with `{ protocol: "auto" }` or `"stateless"`. See "Protocol 2026-07-28" below.
+
 Revisions accepted during the handshake: `2025-11-25` (default), `2025-06-18`, `2025-03-26`, `2024-11-05`. The server echoes the revision the client requested when it appears in that list, and answers with its newest otherwise; the client announces `2025-11-25` and disconnects if the server replies with a revision it cannot speak. Narrow the accepted set with `withOptions({ protocolVersions: [...] })`, or pin one revision by returning `protocolVersion` from your `IMcpInitializer`.
 
 | Area | Status |
@@ -135,6 +137,11 @@ Revisions accepted during the handshake: `2025-11-25` (default), `2025-06-18`, `
 | `ping` (both directions) | yes |
 | Pagination (`cursor` / `nextCursor`) | client follows it; server returns single pages |
 | `notifications/cancelled`, both ends: `{ signal }` on client calls, `request.signal` in adapters | yes (1.5.0) |
+| `2026-07-28` (stateless): `server/discover`, per-request `_meta`, `subscriptions/listen`, `resultType`, `ttlMs`/`cacheScope`, `-32020`/`-32021`/`-32022`, multi round-trip results from tools, Streamable HTTP without sessions (`Mcp-Method`, `Mcp-Name`) | yes (unreleased), beside the handshake revisions |
+| Extensions: `capabilities.extensions`, `withExtension()`, extension methods and notifications, `client.serverExtension()` | yes (unreleased) |
+| Events (`io.modelcontextprotocol/events`, SEP-3415): `McpEventLog`, `McpEventsExtension` (list, poll, stream), `McpEventsClient` | yes (unreleased), stateless revisions only |
+| MCP Apps (`io.modelcontextprotocol/ui`): `withUi()`, `uiResource()`, `McpAppsExtension` | yes (unreleased) |
+| Action metadata and trust annotations (experimental drafts): `withActionMetadata()`, `withTrustAnnotations()` | yes (unreleased) |
 | Progress, sampling, roots, elicitation, tasks | not yet |
 | Transports | stdio and Streamable HTTP, both roles each, plus loopback |
 | Streamable HTTP: sessions, `MCP-Protocol-Version`, SSE resumption, `DELETE` teardown | yes |

@@ -1,6 +1,17 @@
 import { IEventSource } from "./eventSource";
 import type { McpGrammar } from "../mcp.grammar";
-import type { McpAnnotations, McpBaseMetadata, McpIcon, McpMeta, McpResource, McpResourceContent, McpResourceTemplate, McpTool } from "./mcp.core.interfaces";
+import type {
+    McpAnnotations,
+    McpBaseMetadata,
+    McpClientCapabilities,
+    McpClientInfo,
+    McpIcon,
+    McpMeta,
+    McpResource,
+    McpResourceContent,
+    McpResourceTemplate,
+    McpTool,
+} from "./mcp.core.interfaces";
 
 // ── Tool Support ─────────────────────────────────────────────────────────────
 
@@ -192,6 +203,47 @@ export interface IMcpRequestContext {
      * request, as the spec asks.
      */
     readonly signal?: AbortSignal;
+
+    /**
+     * `true` for a stateless request (revision 2026-07-28 or later): it
+     * carried its revision and capabilities itself, and nothing about the
+     * client may be assumed from an earlier request.
+     */
+    readonly stateless?: boolean;
+
+    /** The revision the request is written in: the session's, or the request's own when stateless. */
+    readonly protocolVersion?: string;
+
+    /** What the client declared, for this request (stateless) or this session. */
+    readonly clientCapabilities?: McpClientCapabilities;
+
+    /** Who the client says it is, when it said. */
+    readonly clientInfo?: McpClientInfo;
+
+    /**
+     * Multi round-trip requests (2026-07-28): the answers the client brings on
+     * the retry of a request that returned `resultType: "input_required"`.
+     */
+    readonly inputResponses?: Readonly<Record<string, unknown>>;
+
+    /** The opaque state the server returned with `input_required`, echoed by the client. Untrusted. */
+    readonly requestState?: string;
+
+    /**
+     * Emits `notifications/message` for this request. Stateless: only when the
+     * request asked for it (`io.modelcontextprotocol/logLevel`) at or below
+     * `level`, while the request is in flight. Session: as `IMcpServer.log`.
+     * Returns whether the message went out.
+     */
+    log?(level: McpLoggingLevel, data: unknown, logger?: string): boolean;
+
+    /**
+     * Sends a notification that belongs to this request (a long-lived
+     * request's events, progress), while the request is in flight. On
+     * Streamable HTTP it travels on the request's own response stream.
+     * Returns whether it went out.
+     */
+    notify?(method: string, params?: Record<string, unknown>): boolean;
 }
 
 /**

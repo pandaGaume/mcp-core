@@ -137,12 +137,14 @@ export const Mcp = {
      * supplied them.
      */
     toolCallResult: (id: string | number, result: McpToolResult): JsonRpcResponse =>
-        jsonRpcOk(id, {
-            content: result.content,
-            ...(result.structuredContent !== undefined ? { structuredContent: result.structuredContent } : {}),
-            ...(result._meta !== undefined ? { _meta: result._meta } : {}),
-            isError: result.isError ?? false,
-        }),
+        (result as { resultType?: unknown }).resultType === "input_required"
+            ? jsonRpcOk(id, { ...result })
+            : jsonRpcOk(id, {
+                  content: result.content,
+                  ...(result.structuredContent !== undefined ? { structuredContent: result.structuredContent } : {}),
+                  ...(result._meta !== undefined ? { _meta: result._meta } : {}),
+                  isError: result.isError ?? false,
+              }),
 
     /**
      * Wraps the empty result `resources/subscribe`, `resources/unsubscribe` and

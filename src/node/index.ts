@@ -8,3 +8,4 @@ export { ChildProcessTransport } from "./childprocess.transport";
 export type { IChildProcessTransportOptions, ChildProcessStderr } from "./childprocess.transport";
 export { loadGrammarDirectory } from "./grammar.directory";
 export type { GrammarDirectory, GrammarDirectoryFile, GrammarDirectoryOptions, GrammarDirectorySurface } from "./grammar.directory";
+export { StatelessRequestTransport, decodeMcpHeaderValue, encodeMcpHeaderValue, mcpNameOf } from "./streamable-http.stateless";

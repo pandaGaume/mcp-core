@@ -152,6 +152,68 @@ new McpServerBuilder().withName("page").withTransport(transport).register(new We
 - Cancellation crosses both ways (§5b): the agent's `signal` withdraws the server call; an MCP cancellation aborts the page tool's `signal`.
 - `npm run test:browser` checks all of this against a real Chrome (146+, `--enable-features=WebMCP`, headless, throwaway profile): `e2e/webmcp/`. Chrome 157 drops `outputSchema` from `getTools()`.
 
+## 6c. Extensions (unreleased)
+
+An MCP extension is declared under `capabilities.extensions["<id>"]` (a settings object, `{}` for none) and may add methods. On revision `2025-11-25` both sides declare it at `initialize`.
+
+```ts
+const server = new McpServerBuilder()
+    .withTransport(transport)
+    .withExtension(new McpAppsExtension({ behaviors: [faceplates] })) // or any IMcpServerExtension
+    .build();
+
+const client = new McpClient(info, transport, 30_000, { capabilities: appsClientCapabilities() });
+await client.connect();
+if (client.serverExtension("com.example/echo")) await client.request("echo/say", { text: "hi" });
+```
+
+- `IMcpServerExtension`: `id`, `settings()` (`undefined` = not declared, its methods then answer `-32601`), `methods`, `notifications`, `behaviors`, `presentTools(tools, host)` to adapt `tools/list` per session, `attach(host)` / `detach()`.
+- A core method or notification cannot be claimed; two extensions cannot claim the same one. Both are refused at `build()`.
+- A throwing handler is answered `-32603`. `host.notify()` drops notifications before `notifications/initialized`.
+- `server.clientExtension(id)` / `host.clientExtension(id)` read what the client declared; `client.serverExtension(id)` what the server declared. Call an extension's methods only when it is declared.
+- **MCP Apps** (`io.modelcontextprotocol/ui`, stable 2026-01-26): `withUi(tool, { resourceUri: "ui://...", visibility? })`, `uiResource()` / `uiResourceContent()` with `text/html;profile=mcp-app`. `McpAppsExtension` hides `_meta.ui` and app-only tools from a client that does not declare it renders Apps. The `ui/*` messages never reach the server.
+- **Action metadata** (`annotations["io.modelcontextprotocol/action-metadata"]`) and **trust annotations** (`_meta["io.modelcontextprotocol/trust-annotations"]` on a result or a block): experimental drafts, value sets other than `outcome` are open strings. `toolNeedsReview()` and `trustAnnotationsOf()` (block flags never weaken the result's). Advisory: never a grant.
+- `presentTools(tools, request)` reads `request.clientCapabilities`: the session's, or the request's own when it is stateless.
+
+## 6d. Protocol 2026-07-28, stateless (unreleased)
+
+No `initialize`: every request carries `params._meta["io.modelcontextprotocol/protocolVersion"]` and `["io.modelcontextprotocol/clientCapabilities"]` (`MCP_META`). **One server serves both eras**, chosen per request: such a `_meta` means stateless, `initialize` opens a session as before.
+
+```ts
+// Client: probe with server/discover, fall back to initialize on an older server.
+const client = new McpClient(info, transport, 30_000, { protocol: "auto" }); // "legacy" (default) | "auto" | "stateless"
+await client.connect();
+client.isStateless; // true against a 2026-07-28 server
+```
+
+- Server, stateless path: `server/discover`; `subscriptions/listen` (acknowledgement first, notifications tagged `_meta["io.modelcontextprotocol/subscriptionId"]`, ended by `notifications/cancelled` or by `stop()`, which answers it); `-32601` for `ping`, `logging/setLevel`, `resources/subscribe`/`unsubscribe`; results get `resultType`, `_meta` serverInfo, and `ttlMs`/`cacheScope` on the cacheable ones (`withOptions({ cache })`, default `0`/`"private"`); resource not found is `-32602`; `-32022` for an unknown revision, `-32602` without `clientCapabilities`.
+- `IMcpRequestContext` now carries `stateless`, `protocolVersion`, `clientCapabilities`, `clientInfo`, `inputResponses`, `requestState` and `log()` in **both** eras. Read the client's capabilities there, never from an earlier request.
+- Logging: stateless clients get `notifications/message` only through `request.log()`, for a request that carried `io.modelcontextprotocol/logLevel`. `server.log()` now speaks to an `initialize` session only.
+- Multi round-trip: a tool returns `McpToolResults.inputRequired({ inputRequests, requestState })`; the retry brings `request.inputResponses`. A handshake session gets `-32603` instead. `requestState` comes back from the client: sign it if it decides anything.
+- List changes and resource updates reach stateless clients only through `subscriptions/listen`. The client opens and reopens one itself; `subscribeResource()` and `setLoggingLevel()` keep their meaning.
+- Streamable HTTP: a POST without `Mcp-Session-Id` carrying a stateless `_meta` gets a server built for that request (the same `createServer` factory) and is answered as JSON, or SSE once a notification comes first; `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` (`=?base64?...?=` for non-ASCII) must match the body (`400`, `-32020`); an unknown method is `404`. Closing the stream cancels the request. Sessions keep working on the same URL. `statelessProtocolVersions: []` (server options or endpoint options) turns the stateless era off.
+
+## 6e. Events (unreleased, SEP-3415)
+
+`io.modelcontextprotocol/events`: named event streams a client polls or streams from a cursor. Stateless revisions only: declared in `server/discover`, `-32601` to an `initialize` session.
+
+```ts
+const log = new McpEventLog({ capacity: 10_000 });             // shared by every server, including per-request HTTP ones
+log.define({ name: "alarm", matches: (args, data) => !args.area || args.area === data.area });
+new McpServerBuilder().withTransport(t).withExtension(new McpEventsExtension(log)).build(); // one extension per server
+log.publish("alarm", { area: "nord", tag: "P-101", state: "HH" });
+
+const events = new McpEventsClient(client);                     // client connected with protocol "stateless" or "auto"
+const page = await events.poll("alarm", { area: "nord" }, null); // null = from now; keep page.cursor
+const stream = events.stream("alarm", { area: "nord" }, { onEvent: (e) => handle(e) }, { cursor: page.cursor });
+```
+
+- Cursors are log positions (decimal strings). A cursor older than what the log keeps reads from the oldest kept, `truncated: true`.
+- `events/stream` sends `notifications/events/active` first, the backlog, then live occurrences (each with its `cursor`), and `notifications/events/heartbeat` after `heartbeatMs` of silence; all tagged with the request id. The client reopens from its last cursor after three silent intervals. On HTTP it is the request's own SSE response; closing it cancels.
+- `notifications/events/list_changed` goes to `subscriptions/listen` streams that asked for `eventsListChanged` (extensions declare such flags with `subscriptionFlags`, reach them with `host.notifyListeners`).
+- Errors: unknown event `-32023`, delivery mode not offered `-32026`, bad cursor or arguments `-32602`. `Mcp-Name` carries `params.name` on `events/poll`, `/stream`, `/subscribe`, `/unsubscribe`.
+- Extension hooks used here: `statelessOnly`, `subscriptionFlags`, and `request.notify()` for notifications that belong to a request.
+
 ## 7. Spec coverage
 
 Every request a client may send is listed per revision in `MCP_SERVER_REQUEST_METHODS`. `tests/spec.coverage.test.ts` sends each one to a server and fails on `-32601` unless the method is in `MCP_SERVER_UNSUPPORTED_METHODS` with a reason. **When a new revision lands, add its methods there first**: the test then says what is missing.
@@ -165,6 +227,7 @@ Every request a client may send is listed per revision in `MCP_SERVER_REQUEST_ME
 | sampling, roots, elicitation (server-to-client) | the client answers `-32601` |
 | OAuth client flow | not implemented; pass a token through transport `headers` |
 | Pagination | the client follows `nextCursor`; the server returns single pages |
+| `server/discover`, `subscriptions/listen` (2026-07-28, stateless) | yes, unreleased (§6d); outside `MCP_SERVER_REQUEST_METHODS`, which lists the handshake revisions, and tested in `tests/stateless.test.ts` |
 
 A custom `IMcpServerHandlers` written before 1.3.0 keeps compiling and working: the handlers added since are optional and the server falls back to its own.
 

@@ -7,6 +7,10 @@ import type {
     IMcpServer,
     IMcpServerHandlers,
     IMcpServerOptions,
+    IMcpExtensionHost,
+    IMcpServerExtension,
+    McpExtensionHandler,
+    McpExtensionNotificationHandler,
     McpGrammarResolver,
 } from "../interfaces";
 import type {
@@ -24,6 +28,7 @@ import type {
     McpResource,
     McpResourceTemplate,
     McpServerCapabilities,
+    McpServerIdentity,
     McpTool,
 } from "../interfaces";
 import { MCP_LOGGING_LEVELS } from "../interfaces";
@@ -31,9 +36,19 @@ import type { IEventEmitter, IEventSource, Unsubscribe } from "../interfaces/eve
 import { createEventEmitter } from "../interfaces/eventSource";
 import { GRAMMAR_PHRASES_URI, McpGrammar } from "../mcp.grammar";
 import type { McpGrammarStore, McpGrammarStoreChangeEvent } from "../mcp.grammarStore";
-import { negotiateProtocolVersion } from "../mcp.protocol";
+import {
+    MCP_CACHEABLE_METHODS,
+    MCP_ERROR_CODES,
+    MCP_META,
+    MCP_SERVER_NOTIFICATION_METHODS,
+    MCP_SERVER_REQUEST_METHODS,
+    MCP_STATELESS_PROTOCOL_VERSIONS,
+    MCP_STATELESS_REMOVED_METHODS,
+    MCP_STATELESS_REQUEST_METHODS,
+    negotiateProtocolVersion,
+} from "../mcp.protocol";
 import { McpToolResults } from "../mcp.toolResult";
-import { Mcp } from "./jsonrpc.helpers";
+import { jsonRpcError, jsonRpcOk, Mcp } from "./jsonrpc.helpers";
 
 /**
  * An {@link IEventEmitter} that also reports how many handlers are subscribed.
@@ -103,7 +118,7 @@ function isLoggingLevel(value: unknown): value is McpLoggingLevel {
  * what another one, or the server, sees of the same request. A `_meta` that is
  * not a plain object is not metadata the spec defines, and is left out.
  */
-function requestContextOf(req: JsonRpcRequest, sequence: number, signal: AbortSignal | undefined): IMcpRequestContext {
+function requestContextOf(req: JsonRpcRequest, sequence: number, signal: AbortSignal | undefined, extra: Partial<IMcpRequestContext> = {}): IMcpRequestContext {
     const meta = (req.params as { _meta?: unknown } | undefined)?._meta;
     const usable = typeof meta === "object" && meta !== null && !Array.isArray(meta);
     return Object.freeze({
@@ -112,7 +127,50 @@ function requestContextOf(req: JsonRpcRequest, sequence: number, signal: AbortSi
         method: req.method,
         ...(usable ? { meta: Object.freeze({ ...(meta as Record<string, unknown>) }) } : {}),
         ...(signal ? { signal } : {}),
+        ...extra,
     });
+}
+
+/** `true` for a non-null, non-array object. */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * What the server knows about the client while serving one request: the
+ * session's view for a client that sent `initialize`, the request's own
+ * `_meta` for a stateless one (2026-07-28 and later).
+ */
+interface IRequestScope {
+    readonly stateless: boolean;
+    readonly protocolVersion: string | undefined;
+    readonly clientCapabilities: McpClientCapabilities | undefined;
+    readonly clientInfo: McpClientInfo | undefined;
+    readonly grammar: McpGrammar | undefined;
+    readonly grammarKey: string | undefined;
+    /** Stateless only: the level the request asked `notifications/message` at, if it did. */
+    readonly logLevel?: McpLoggingLevel;
+    /** Stateless only: the server identity for this client. */
+    readonly serverInfo?: McpServerIdentity["serverInfo"];
+    readonly instructions?: string;
+}
+
+/** The notifications a `subscriptions/listen` asks for. */
+interface ISubscriptionFilter {
+    toolsListChanged?: boolean;
+    promptsListChanged?: boolean;
+    resourcesListChanged?: boolean;
+    resourceSubscriptions?: string[];
+    /** Flags extensions add (`eventsListChanged`, ...). */
+    [flag: string]: boolean | string[] | undefined;
+}
+
+/** One open `subscriptions/listen`. */
+interface IListen {
+    readonly id: string | number;
+    readonly filter: ISubscriptionFilter;
+    /** Ends the listen: settles its pending dispatch without a second answer. */
+    finish(): void;
 }
 
 /**
@@ -182,6 +240,27 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
 
     /** Registered behavior types, keyed by namespace. */
     private readonly _behaviors = new Map<string, IMcpBehavior>();
+
+    /** Extensions by identifier, in registration order. */
+    private readonly _extensions = new Map<string, IMcpServerExtension>();
+    /** Request methods added by extensions, with their owner. */
+    private readonly _extensionMethods = new Map<string, { readonly extension: IMcpServerExtension; readonly handler: McpExtensionHandler }>();
+    /** Client notifications added by extensions, with their owner. */
+    private readonly _extensionNotifications = new Map<string, { readonly extension: IMcpServerExtension; readonly handler: McpExtensionNotificationHandler }>();
+    /** The view of this server handed to extensions; created on first registration. */
+    private _extensionHost: IMcpExtensionHost | undefined;
+
+    /** The scope of each stateless request being served, keyed by the request object itself. */
+    private readonly _statelessScopes = new WeakMap<JsonRpcRequest, IRequestScope>();
+    /** Grammars composed for stateless requests, by key; cleared when a grammar changes. */
+    private readonly _grammarCache = new Map<string, McpGrammar | null>();
+    /** Open `subscriptions/listen` requests, by in-flight key. */
+    private readonly _listens = new Map<string, IListen>();
+
+    /** The capabilities the client declared at `initialize`, for the current session. */
+    private _clientCapabilities: McpClientCapabilities | undefined;
+    /** The client's identity from `initialize`, for the current session. */
+    private _clientInfo: McpClientInfo | undefined;
     private readonly _resourceIndex = new Map<string, IMcpRuntimeOperations>();
 
     /**
@@ -313,6 +392,17 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         return this._protocolVersion;
     }
 
+    /** The capabilities the client declared at `initialize`, `undefined` outside a session. */
+    get clientCapabilities(): McpClientCapabilities | undefined {
+        return this._clientCapabilities;
+    }
+
+    /** The settings the client declared for `extensionId`, `undefined` when it did not declare it. */
+    clientExtension(extensionId: string): Readonly<Record<string, unknown>> | undefined {
+        const settings = this._clientCapabilities?.extensions?.[extensionId];
+        return typeof settings === "object" && settings !== null && !Array.isArray(settings) ? settings : undefined;
+    }
+
     /**
      * Transport-level errors reported after the transport opened.
      *
@@ -369,6 +459,12 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      */
     async stop(): Promise<void> {
         this._clearIdleTimer();
+        // A server closing a subscription gracefully answers it (2026-07-28).
+        for (const listen of [...this._listens.values()]) {
+            this._send(jsonRpcOk(listen.id, { resultType: "complete", _meta: { [MCP_META.subscriptionId]: listen.id } }));
+            listen.finish();
+        }
+        for (const extension of this._extensions.values()) extension.detach?.();
         this._storeUnsubscribe?.();
         this._storeUnsubscribe = undefined;
         for (const unsub of this._behaviorGrammarUnsubs.values()) unsub();
@@ -405,6 +501,46 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
             if (behavior.some((b) => (b.getPrompts?.().length ?? 0) > 0)) this.notifyPromptsListChanged();
         }
         return this;
+    }
+
+    /**
+     * Takes an MCP extension: declares it under `capabilities.extensions`,
+     * serves the methods and notifications it adds, and registers its
+     * behaviors. Usually called through `McpServerBuilder.withExtension()`.
+     *
+     * @throws {Error} when the identifier is taken, or a method or
+     * notification is a core one or already claimed by another extension.
+     */
+    registerExtension(extension: IMcpServerExtension): this {
+        if (!extension.id) throw new Error("McpServer: an extension needs a non-empty id");
+        if (this._extensions.has(extension.id)) throw new Error(`McpServer: extension "${extension.id}" is already registered`);
+        const coreRequests = new Set(["initialize", ...Object.values(MCP_SERVER_REQUEST_METHODS).flat(), ...MCP_STATELESS_REQUEST_METHODS]);
+        const coreNotifications = new Set(MCP_SERVER_NOTIFICATION_METHODS);
+        const methods = Object.entries(extension.methods ?? {});
+        const notifications = Object.entries(extension.notifications ?? {});
+        // Validate everything before touching any table, so a refusal leaves the server as it was.
+        for (const [method] of methods) {
+            if (coreRequests.has(method)) throw new Error(`McpServer: extension "${extension.id}" cannot claim the core method "${method}"`);
+            const owner = this._extensionMethods.get(method);
+            if (owner) throw new Error(`McpServer: extension "${extension.id}" claims "${method}", already served by "${owner.extension.id}"`);
+        }
+        for (const [method] of notifications) {
+            if (coreNotifications.has(method)) throw new Error(`McpServer: extension "${extension.id}" cannot claim the core notification "${method}"`);
+            const owner = this._extensionNotifications.get(method);
+            if (owner) throw new Error(`McpServer: extension "${extension.id}" claims "${method}", already handled by "${owner.extension.id}"`);
+        }
+
+        this._extensions.set(extension.id, extension);
+        for (const [method, handler] of methods) this._extensionMethods.set(method, { extension, handler });
+        for (const [method, handler] of notifications) this._extensionNotifications.set(method, { extension, handler });
+        if (extension.behaviors?.length) this.register(...extension.behaviors);
+        extension.attach?.(this._hostForExtensions());
+        return this;
+    }
+
+    /** The extensions this server serves, in registration order. */
+    get extensions(): readonly IMcpServerExtension[] {
+        return [...this._extensions.values()];
     }
 
     unregister(...behavior: IMcpBehavior[]): IMcpServer {
@@ -448,6 +584,8 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
 
         const clientInfo = params?.clientInfo ?? { name: "unknown", version: "0.0.0" };
         const capabilities = params?.capabilities;
+        this._clientInfo = clientInfo;
+        this._clientCapabilities = capabilities ?? {};
 
         const identity = this._initializer ? this._initializer.initialize(clientInfo, capabilities ?? {}) : { serverInfo: { name: this._name, version: "0.0.0" } };
 
@@ -459,19 +597,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         // returned by the resolver and picking the first key that yields
         // a non-empty merge across the four layers
         // (behavior → adapter → static → store).
-        const raw = this._grammarResolver?.(clientInfo, capabilities);
-        const candidates: readonly string[] = !raw ? [] : typeof raw === "string" ? [raw] : raw;
-
-        let matchedKey: string | undefined;
-        let matchedGrammar: McpGrammar | undefined;
-        for (const candidate of candidates) {
-            const merged = this._composeSessionGrammar(candidate);
-            if (merged) {
-                matchedKey = candidate;
-                matchedGrammar = merged;
-                break;
-            }
-        }
+        const { key: matchedKey, grammar: matchedGrammar } = this._resolveGrammar(clientInfo, capabilities, (key) => this._composeSessionGrammar(key));
         this._currentGrammarKey = matchedKey;
         this._sessionGrammar = matchedGrammar;
 
@@ -547,7 +673,8 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         for (const behavior of this._behaviors.values()) {
             templates.push(...behavior.getResourceTemplates());
         }
-        const patched = this._sessionGrammar ? this._applyTemplateGrammar(templates, this._sessionGrammar) : templates;
+        const grammar = this._scopeOf(req).grammar;
+        const patched = grammar ? this._applyTemplateGrammar(templates, grammar) : templates;
         return Mcp.resourcesTemplatesListResult(req.id, patched);
     }
 
@@ -560,9 +687,10 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      */
     resourcesList(req: JsonRpcRequest): JsonRpcResponse {
         const resources = Array.from(this._behaviors.values()).flatMap((i) => i.getResources());
-        const patched = this._sessionGrammar ? this._applyResourceGrammar(resources, this._sessionGrammar) : resources;
+        const grammar = this._scopeOf(req).grammar;
+        const patched = grammar ? this._applyResourceGrammar(resources, grammar) : resources;
         // The session's phrases (1.2.0): listed only when the wording chosen for this session carries some.
-        if (this._sessionGrammar?.hasPhrases())
+        if (grammar?.hasPhrases())
             patched.push({
                 uri: GRAMMAR_PHRASES_URI,
                 name: "Phrases",
@@ -589,8 +717,9 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         if (!uri) return Mcp.invalidParams(req.id, "Missing required parameter: uri");
         if (uri === GRAMMAR_PHRASES_URI) {
             // The phrases of the session's wording, as the grammar resolved at `initialize` carries them; none resolved, none served.
-            if (!this._sessionGrammar?.hasPhrases()) return Mcp.resourceNotFound(req.id, uri);
-            const text = JSON.stringify({ grammar: this._currentGrammarKey, phrases: this._sessionGrammar.getPhrases() });
+            const scope = this._scopeOf(req);
+            if (!scope.grammar?.hasPhrases()) return Mcp.resourceNotFound(req.id, uri);
+            const text = JSON.stringify({ grammar: scope.grammarKey, phrases: scope.grammar.getPhrases() });
             return Mcp.resourcesReadResult(req.id, { uri, mimeType: "application/json", text });
         }
         const instance = this._resourceIndex.get(uri) ?? this._matchTemplate(uri);
@@ -619,7 +748,13 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
             }
         }
 
-        const patched = this._sessionGrammar ? this._applyGrammar(tools, this._sessionGrammar) : tools;
+        const grammar = this._scopeOf(req).grammar;
+        let patched = grammar ? this._applyGrammar(tools, grammar) : tools;
+        const presenting = [...this._extensions.values()].filter((extension) => extension.presentTools && extension.settings() !== undefined);
+        if (presenting.length > 0) {
+            const context = this._requestContextOf(req);
+            for (const extension of presenting) patched = extension.presentTools!(patched, context);
+        }
 
         return Mcp.toolsListResult(req.id, patched);
     }
@@ -802,9 +937,19 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      * this session subscribed to it. Returns whether a notification went out.
      */
     notifyResourceUpdated(uri: string): boolean {
-        if (!this._subscriptions.has(uri) || !this._transport?.isOpen) return false;
-        this._sendNotification(Mcp.resourceUpdated(uri));
-        return true;
+        let sent = false;
+        if (this._subscriptions.has(uri) && this._transport?.isOpen) {
+            this._sendNotification(Mcp.resourceUpdated(uri));
+            sent = true;
+        }
+        // Stateless subscribers: an update may name a sub-resource of the URI subscribed.
+        for (const listen of this._listens.values()) {
+            const watched = listen.filter.resourceSubscriptions ?? [];
+            if (!watched.some((s) => s === uri || uri.startsWith(s.endsWith("/") ? s : `${s}/`))) continue;
+            this._sendNotification({ jsonrpc: "2.0", method: "notifications/resources/updated", params: { uri, _meta: { [MCP_META.subscriptionId]: listen.id } } });
+            sent = true;
+        }
+        return sent;
     }
 
     /** Sends `notifications/resources/list_changed` to an initialized session. */
@@ -814,6 +959,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
 
     /** Sends `notifications/prompts/list_changed` to an initialized session. */
     notifyPromptsListChanged(): void {
+        this._notifyListens("notifications/prompts/list_changed", "promptsListChanged");
         if (!this._sessionReady) return;
         this._sendNotification(Mcp.promptsListChanged());
     }
@@ -829,7 +975,10 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      * or when nothing is connected.
      */
     log(level: McpLoggingLevel, data: unknown, logger?: string): boolean {
-        if (!this._options.logging || !this._transport?.isOpen) return false;
+        // A session only: a stateless client asks for messages per request
+        // (`io.modelcontextprotocol/logLevel`, see `IMcpRequestContext.log`)
+        // and must receive none it did not ask for.
+        if (!this._options.logging || !this._transport?.isOpen || this._protocolVersion === undefined) return false;
         if (MCP_LOGGING_LEVELS.indexOf(level) < MCP_LOGGING_LEVELS.indexOf(this._logLevel)) return false;
         this._sendNotification(Mcp.logMessage(level, data, logger));
         return true;
@@ -1037,6 +1186,8 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         this._sessionGrammar = undefined; // grammar must be re-resolved on reconnection
         this._currentGrammarKey = undefined;
         this._subscriptions.clear(); // subscriptions belong to the session, not the server
+        this._clientCapabilities = undefined; // declared again at the next initialize
+        this._clientInfo = undefined;
         // Work still running belongs to a session that is gone: stop it.
         for (const controller of this._inflight.values()) controller.abort(Object.assign(new Error("Session closed"), { name: "AbortError" }));
         this._inflight.clear();
@@ -1102,17 +1253,28 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
             return;
         }
 
+        // A request carrying its own revision in `_meta` is stateless
+        // (2026-07-28 and later); anything else belongs to the session.
+        const stateless = this._statelessScopeFor(req);
+        if (stateless && "jsonrpc" in stateless) {
+            this._send(stateless);
+            return;
+        }
+        if (stateless) this._statelessScopes.set(req, stateless);
+
         const key = inflightKey(req.id);
         const controller = new AbortController();
         this._inflight.set(key, controller);
-        let response: JsonRpcResponse;
+        let response: JsonRpcResponse | undefined;
         try {
-            response = await this._dispatch(req);
+            response = stateless ? await this._dispatchStateless(req) : await this._dispatch(req);
         } finally {
             if (this._inflight.get(key) === controller) this._inflight.delete(key);
         }
         // A cancelled request gets no answer: the peer has already forgotten it.
-        if (!controller.signal.aborted) this._send(response);
+        // `undefined`: the request was already answered (a listen the server closed).
+        if (controller.signal.aborted || response === undefined) return;
+        this._send(stateless ? this._decorateStateless(req, response) : this._guardSession(response));
     }
 
     /**
@@ -1146,7 +1308,18 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
             case "notifications/cancelled":
                 this._cancelRequest(notification.params);
                 break;
-            // All other notifications are intentionally ignored.
+            default: {
+                // An extension's notification, while that extension is declared.
+                // All others are ignored, as the protocol requires.
+                const entry = this._extensionNotifications.get(notification.method);
+                if (!entry || entry.extension.settings() === undefined) break;
+                try {
+                    entry.handler(notification.params);
+                } catch (error) {
+                    // eslint-disable-next-line no-console
+                    console.error(`[mcp-core] extension "${entry.extension.id}" failed on ${notification.method}: ${(error as Error).message}`);
+                }
+            }
         }
     }
 
@@ -1190,8 +1363,59 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
                 if (!this._options.logging) return Mcp.methodNotFound(req.id, req.method);
                 return this._handlers.loggingSetLevel ? this._handlers.loggingSetLevel(req) : this.loggingSetLevel(req);
             default:
-                return Mcp.methodNotFound(req.id, req.method);
+                return this._dispatchExtension(req);
         }
+    }
+
+    /**
+     * Routes a request to the extension that added its method, while that
+     * extension is declared. A throwing handler is answered `-32603`: a fault
+     * in an extension must not leave the request unanswered.
+     */
+    private async _dispatchExtension(req: JsonRpcRequest): Promise<JsonRpcResponse> {
+        const entry = this._extensionMethods.get(req.method);
+        if (!entry || entry.extension.settings() === undefined) return Mcp.methodNotFound(req.id, req.method);
+        if (entry.extension.statelessOnly && !this._scopeOf(req).stateless) return Mcp.methodNotFound(req.id, req.method);
+        try {
+            return await entry.handler(req, this._requestContextOf(req));
+        } catch (error) {
+            return Mcp.internalError(req.id, error instanceof Error ? error.message : String(error));
+        }
+    }
+
+    /** The view of this server extensions receive. One per server. */
+    private _hostForExtensions(): IMcpExtensionHost {
+        if (this._extensionHost) return this._extensionHost;
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
+        const server = this;
+        this._extensionHost = {
+            get clientCapabilities() {
+                return server._clientCapabilities;
+            },
+            get clientInfo() {
+                return server._clientInfo;
+            },
+            get protocolVersion() {
+                return server._protocolVersion;
+            },
+            get isSessionReady() {
+                return server._sessionReady;
+            },
+            get onDisconnected() {
+                return server.onDisconnected;
+            },
+            clientExtension: (extensionId) => server.clientExtension(extensionId),
+            notify: (method, params) => {
+                if (!server._sessionReady || !server._transport?.isOpen) return false;
+                server._sendNotification({ jsonrpc: "2.0", method, ...(params !== undefined ? { params } : {}) });
+                return true;
+            },
+            notifyToolsListChanged: () => server.notifyToolsListChanged(),
+            notifyResourcesListChanged: () => server.notifyResourcesListChanged(),
+            notifyResourceUpdated: (uri) => server.notifyResourceUpdated(uri),
+            notifyListeners: (flag, method, params) => server._notifyListens(method, flag, params),
+        };
+        return this._extensionHost;
     }
 
     // -------------------------------------------------------------------------
@@ -1226,6 +1450,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      * Only fires when the session is fully initialized and the WebSocket is open.
      */
     private _notifyResourcesListChanged(): void {
+        this._notifyListens("notifications/resources/list_changed", "resourcesListChanged");
         if (!this._sessionReady) return;
         this._sendNotification(Mcp.resourcesListChanged());
     }
@@ -1235,8 +1460,25 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      * Only fires when the session is fully initialized and the WebSocket is open.
      */
     private _notifyToolsListChanged(): void {
+        this._notifyListens("notifications/tools/list_changed", "toolsListChanged");
+        this._notifySessionToolsListChanged();
+    }
+
+    /** `notifications/tools/list_changed` to the `initialize` session only. */
+    private _notifySessionToolsListChanged(): void {
         if (!this._sessionReady) return;
         this._sendNotification(Mcp.toolsListChanged());
+    }
+
+    /** Sends one list-changed notification to every open listen that asked for it, tagged with its id. */
+    private _notifyListens(method: string, flag: string, params: Record<string, unknown> = {}): number {
+        let sent = 0;
+        for (const listen of this._listens.values()) {
+            if (listen.filter[flag] !== true) continue;
+            this._sendNotification({ jsonrpc: "2.0", method, params: { ...params, _meta: { [MCP_META.subscriptionId]: listen.id } } });
+            sent++;
+        }
+        return sent;
     }
 
     /**
@@ -1246,9 +1488,12 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      * `tools/list`.
      */
     private _onGrammarStoreChanged(event: McpGrammarStoreChangeEvent): void {
+        // Stateless clients may use any key: forget every composed grammar.
+        this._grammarCache.clear();
+        this._notifyListens("notifications/tools/list_changed", "toolsListChanged");
         if (!this._currentGrammarKey || event.profileId !== this._currentGrammarKey) return;
         this._sessionGrammar = this._composeSessionGrammar(this._currentGrammarKey);
-        this._notifyToolsListChanged();
+        this._notifySessionToolsListChanged();
     }
 
     /**
@@ -1258,9 +1503,11 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      * session is active or the active key cannot be re-merged.
      */
     private _onBehaviorGrammarsChanged(): void {
+        this._grammarCache.clear();
+        this._notifyListens("notifications/tools/list_changed", "toolsListChanged");
         if (!this._currentGrammarKey) return;
         this._sessionGrammar = this._composeSessionGrammar(this._currentGrammarKey);
-        this._notifyToolsListChanged();
+        this._notifySessionToolsListChanged();
     }
 
     /**
@@ -1279,7 +1526,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      * contributes to it: a tools-only server must not claim `resources`, or a
      * client would list an empty set it was told to expect.
      */
-    private _deriveCapabilities(): McpServerCapabilities {
+    private _deriveCapabilities(stateless = false): McpServerCapabilities {
         let hasResources = false;
         let hasTools = false;
         let hasPrompts = false;
@@ -1301,12 +1548,17 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         if (hasPrompts) capabilities.prompts = { listChanged: true };
         if (hasCompletions) capabilities.completions = {};
         if (this._options.logging) capabilities.logging = {};
+        for (const extension of this._extensions.values()) {
+            const settings = extension.settings();
+            if (settings === undefined || (extension.statelessOnly && !stateless)) continue;
+            capabilities.extensions = { ...(capabilities.extensions ?? {}), [extension.id]: { ...settings } };
+        }
         return capabilities;
     }
 
     /** `true` when `resources/read` could resolve `uri` right now. */
-    private _isReadable(uri: string): boolean {
-        if (uri === GRAMMAR_PHRASES_URI) return this._sessionGrammar?.hasPhrases() ?? false;
+    private _isReadable(uri: string, grammar: McpGrammar | undefined = this._sessionGrammar): boolean {
+        if (uri === GRAMMAR_PHRASES_URI) return grammar?.hasPhrases() ?? false;
         return this._resourceIndex.has(uri) || this._matchTemplate(uri) !== undefined;
     }
 
@@ -1378,7 +1630,229 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     private _requestContextOf(req: JsonRpcRequest): IMcpRequestContext {
         if (this._requestSequence >= Number.MAX_SAFE_INTEGER) throw new Error("MCP request sequence exhausted");
         this._requestSequence += 1;
-        return requestContextOf(req, this._requestSequence, this._inflight.get(inflightKey(req.id))?.signal);
+        const scope = this._scopeOf(req);
+        const params = isPlainObject(req.params) ? req.params : {};
+        const extra: Partial<IMcpRequestContext> = {
+            stateless: scope.stateless,
+            ...(scope.protocolVersion !== undefined ? { protocolVersion: scope.protocolVersion } : {}),
+            ...(scope.clientCapabilities !== undefined ? { clientCapabilities: scope.clientCapabilities } : {}),
+            ...(scope.clientInfo !== undefined ? { clientInfo: scope.clientInfo } : {}),
+            ...(scope.stateless && isPlainObject(params["inputResponses"]) ? { inputResponses: Object.freeze({ ...params["inputResponses"] }) } : {}),
+            ...(scope.stateless && typeof params["requestState"] === "string" ? { requestState: params["requestState"] } : {}),
+            log: (level: McpLoggingLevel, data: unknown, logger?: string) => this._logFor(req, scope, level, data, logger),
+            notify: (method: string, params?: Record<string, unknown>) => {
+                // Only while the request is in flight: once answered or cancelled, it may say nothing more.
+                if (!this._inflight.has(inflightKey(req.id)) || !this._transport?.isOpen) return false;
+                this._sendNotification({ jsonrpc: "2.0", method, ...(params !== undefined ? { params } : {}) });
+                return true;
+            },
+        };
+        return requestContextOf(req, this._requestSequence, this._inflight.get(inflightKey(req.id))?.signal, extra);
+    }
+
+    // -------------------------------------------------------------------------
+    // Stateless revisions (2026-07-28 and later)
+    // -------------------------------------------------------------------------
+
+    /** The scope a handler serves `req` under: its own when stateless, the session's otherwise. */
+    private _scopeOf(req: JsonRpcRequest): IRequestScope {
+        return (
+            this._statelessScopes.get(req) ?? {
+                stateless: false,
+                protocolVersion: this._protocolVersion,
+                clientCapabilities: this._clientCapabilities,
+                clientInfo: this._clientInfo,
+                grammar: this._sessionGrammar,
+                grammarKey: this._currentGrammarKey,
+            }
+        );
+    }
+
+    /**
+     * Picks the wording for a client: the first candidate key the resolver
+     * returns that composes to a grammar.
+     */
+    private _resolveGrammar(
+        clientInfo: McpClientInfo,
+        capabilities: McpClientCapabilities | undefined,
+        compose: (key: string) => McpGrammar | undefined
+    ): { key: string | undefined; grammar: McpGrammar | undefined } {
+        const raw = this._grammarResolver?.(clientInfo, capabilities);
+        const candidates: readonly string[] = !raw ? [] : typeof raw === "string" ? [raw] : raw;
+        for (const candidate of candidates) {
+            const merged = compose(candidate);
+            if (merged) return { key: candidate, grammar: merged };
+        }
+        return { key: undefined, grammar: undefined };
+    }
+
+    /** {@link _composeSessionGrammar}, cached for stateless requests until a grammar changes. */
+    private _composeCachedGrammar(key: string): McpGrammar | undefined {
+        if (!this._grammarCache.has(key)) this._grammarCache.set(key, this._composeSessionGrammar(key) ?? null);
+        return this._grammarCache.get(key) ?? undefined;
+    }
+
+    /**
+     * Reads a request's stateless `_meta`.
+     *
+     * @returns `undefined` for a request written for a handshake revision
+     * (no `io.modelcontextprotocol/protocolVersion`, or stateless serving
+     * turned off), the request's scope, or the error to answer with.
+     */
+    private _statelessScopeFor(req: JsonRpcRequest): IRequestScope | JsonRpcResponse | undefined {
+        const versions = this._options.statelessProtocolVersions ?? MCP_STATELESS_PROTOCOL_VERSIONS;
+        if (versions.length === 0) return undefined;
+        const meta = isPlainObject(req.params) ? req.params["_meta"] : undefined;
+        if (!isPlainObject(meta) || !(MCP_META.protocolVersion in meta)) return undefined;
+
+        const requested = meta[MCP_META.protocolVersion];
+        if (typeof requested !== "string" || !versions.includes(requested)) {
+            return jsonRpcError(req.id, MCP_ERROR_CODES.unsupportedProtocolVersion, `Unsupported protocol version: ${String(requested)}`, {
+                supported: [...versions],
+                requested: String(requested),
+            });
+        }
+        const capabilities = meta[MCP_META.clientCapabilities];
+        if (!isPlainObject(capabilities)) return Mcp.invalidParams(req.id, `Missing required params._meta["${MCP_META.clientCapabilities}"]`);
+        const info = meta[MCP_META.clientInfo];
+        const clientInfo = isPlainObject(info) && typeof info["name"] === "string" && typeof info["version"] === "string" ? (info as unknown as McpClientInfo) : undefined;
+        const level = meta[MCP_META.logLevel];
+        if (level !== undefined && !isLoggingLevel(level)) return Mcp.invalidParams(req.id, `Invalid params._meta["${MCP_META.logLevel}"]: ${String(level)}`);
+
+        const identifiedAs = clientInfo ?? { name: "unknown", version: "0.0.0" };
+        const { key, grammar } = this._resolveGrammar(identifiedAs, capabilities as McpClientCapabilities, (k) => this._composeCachedGrammar(k));
+        const identity = this._initializer
+            ? this._initializer.initialize(identifiedAs, capabilities as McpClientCapabilities)
+            : { serverInfo: { name: this._name, version: "0.0.0" } };
+        const serverInfo =
+            grammar?.getServerDescription() && !identity.serverInfo.description ? { ...identity.serverInfo, description: grammar.getServerDescription() } : identity.serverInfo;
+        const instructions = identity.instructions ?? grammar?.getServerInstructions();
+        return {
+            stateless: true,
+            protocolVersion: requested,
+            clientCapabilities: capabilities as McpClientCapabilities,
+            clientInfo,
+            grammar,
+            grammarKey: key,
+            ...(level !== undefined ? { logLevel: level as McpLoggingLevel } : {}),
+            serverInfo,
+            ...(instructions !== undefined ? { instructions } : {}),
+        };
+    }
+
+    /** Routes a stateless request: the methods it adds, the ones it removed, then the shared handlers. */
+    private async _dispatchStateless(req: JsonRpcRequest): Promise<JsonRpcResponse | undefined> {
+        if (MCP_STATELESS_REMOVED_METHODS.includes(req.method)) return Mcp.methodNotFound(req.id, req.method);
+        switch (req.method) {
+            case "server/discover":
+                return this._discover(req);
+            case "subscriptions/listen":
+                return this._listen(req);
+            default:
+                return this._dispatch(req);
+        }
+    }
+
+    /** `server/discover`: the revisions, capabilities and instructions of this server. */
+    private _discover(req: JsonRpcRequest): JsonRpcResponse {
+        const scope = this._scopeOf(req);
+        return jsonRpcOk(req.id, {
+            supportedVersions: [...(this._options.statelessProtocolVersions ?? MCP_STATELESS_PROTOCOL_VERSIONS)],
+            capabilities: this._deriveCapabilities(true),
+            ...(scope.instructions !== undefined ? { instructions: scope.instructions } : {}),
+        });
+    }
+
+    /**
+     * `subscriptions/listen`: acknowledges the subset of notifications this
+     * server can honor, then stays pending, delivering each matching change
+     * tagged with the request id, until the client cancels it or the server
+     * stops (which answers it).
+     */
+    private _listen(req: JsonRpcRequest): JsonRpcResponse | Promise<JsonRpcResponse | undefined> {
+        const asked = isPlainObject(req.params) ? req.params["notifications"] : undefined;
+        if (!isPlainObject(asked)) return Mcp.invalidParams(req.id, "subscriptions/listen needs params.notifications");
+        const capabilities = this._deriveCapabilities(true);
+        const honored: ISubscriptionFilter = {};
+        // Flags an extension adds, honored while it is declared.
+        for (const extension of this._extensions.values()) {
+            if (extension.settings() === undefined) continue;
+            for (const flag of extension.subscriptionFlags ?? []) if (asked[flag] === true) honored[flag] = true;
+        }
+        if (asked["toolsListChanged"] === true && capabilities.tools) honored.toolsListChanged = true;
+        if (asked["promptsListChanged"] === true && capabilities.prompts) honored.promptsListChanged = true;
+        if (asked["resourcesListChanged"] === true && capabilities.resources) honored.resourcesListChanged = true;
+        const uris = asked["resourceSubscriptions"];
+        if (Array.isArray(uris) && capabilities.resources) {
+            const grammar = this._scopeOf(req).grammar;
+            honored.resourceSubscriptions = [...new Set(uris.filter((uri): uri is string => typeof uri === "string" && uri.length > 0 && this._isReadable(uri, grammar)))];
+        }
+
+        // The acknowledgement is the first message of the subscription.
+        this._sendNotification({
+            jsonrpc: "2.0",
+            method: "notifications/subscriptions/acknowledged",
+            params: { notifications: honored, _meta: { [MCP_META.subscriptionId]: req.id } },
+        });
+
+        const key = inflightKey(req.id);
+        const signal = this._inflight.get(key)?.signal;
+        return new Promise<JsonRpcResponse | undefined>((resolve) => {
+            const listen: IListen = {
+                id: req.id,
+                filter: honored,
+                finish: () => {
+                    if (this._listens.get(key) === listen) this._listens.delete(key);
+                    resolve(undefined);
+                },
+            };
+            this._listens.set(key, listen);
+            signal?.addEventListener("abort", () => listen.finish(), { once: true });
+        });
+    }
+
+    /**
+     * Completes a stateless response: `resultType`, the server's identity,
+     * caching hints on cacheable results, and the 2026-07-28 error codes.
+     */
+    private _decorateStateless(req: JsonRpcRequest, response: JsonRpcResponse): JsonRpcResponse {
+        if (response.error) {
+            // Resource not found is -32602 since 2026-07-28; -32002 is retired.
+            if (response.error.code !== -32002) return response;
+            const uri = isPlainObject(req.params) ? req.params["uri"] : undefined;
+            return { ...response, error: { code: -32602, message: response.error.message, data: { uri } } };
+        }
+        const result: Record<string, unknown> = isPlainObject(response.result) ? { ...response.result } : {};
+        if (result["resultType"] === undefined) result["resultType"] = "complete";
+        const serverInfo = this._scopeOf(req).serverInfo;
+        if (serverInfo) result["_meta"] = { ...(isPlainObject(result["_meta"]) ? result["_meta"] : {}), [MCP_META.serverInfo]: serverInfo };
+        if (MCP_CACHEABLE_METHODS.includes(req.method) && result["resultType"] === "complete") {
+            const cache = this._options.cache ?? { ttlMs: 0, cacheScope: "private" };
+            if (result["ttlMs"] === undefined) result["ttlMs"] = cache.ttlMs;
+            if (result["cacheScope"] === undefined) result["cacheScope"] = cache.cacheScope;
+        }
+        return { ...response, result };
+    }
+
+    /**
+     * A handshake client cannot take a multi round-trip answer: a behavior
+     * asking for input is reported as an error instead.
+     */
+    private _guardSession(response: JsonRpcResponse): JsonRpcResponse {
+        if (isPlainObject(response.result) && response.result["resultType"] === "input_required") {
+            return jsonRpcError(response.id, -32603, "This request needs more input from the client, which requires protocol revision 2026-07-28 or later");
+        }
+        return response;
+    }
+
+    /** `notifications/message` for one request: stateless per its `logLevel`, session as {@link log}. */
+    private _logFor(req: JsonRpcRequest, scope: IRequestScope, level: McpLoggingLevel, data: unknown, logger?: string): boolean {
+        if (!scope.stateless) return this.log(level, data, logger);
+        if (!this._options.logging || scope.logLevel === undefined || !this._transport?.isOpen) return false;
+        if (!this._inflight.has(inflightKey(req.id))) return false;
+        if (MCP_LOGGING_LEVELS.indexOf(level) < MCP_LOGGING_LEVELS.indexOf(scope.logLevel)) return false;
+        this._sendNotification(Mcp.logMessage(level, data, logger));
+        return true;
     }
 
     /**

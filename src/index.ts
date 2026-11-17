@@ -3,6 +3,7 @@ export * from "./mcp.protocol";
 export * from "./mcp.auth";
 export * from "./server/index";
 export * from "./client/index";
+export * from "./extensions/index";
 export * from "./mcp.behaviorBase";
 export * from "./mcp.behavior";
 export * from "./mcp.toolResult";

@@ -1,5 +1,14 @@
 import type { IEventSource } from "./eventSource";
-import type { McpInitializeResult, McpResource, McpResourceContent, McpResourceTemplate, McpServerInfo, McpTool } from "./mcp.core.interfaces";
+import type {
+    McpClientCapabilities,
+    McpInitializeResult,
+    McpServerCapabilities,
+    McpResource,
+    McpResourceContent,
+    McpResourceTemplate,
+    McpServerInfo,
+    McpTool,
+} from "./mcp.core.interfaces";
 import type { McpCompletion, McpCompletionArgument, McpCompletionReference, McpLoggingLevel, McpPrompt, McpPromptResult, McpToolResult } from "./mcp.behavior.interfaces";
 
 /**
@@ -39,6 +48,37 @@ export interface McpRequestOptions {
  * await client.connect();
  * ```
  */
+/** What an {@link McpClient} declares at `initialize`. */
+export interface IMcpClientOptions {
+    /**
+     * The client capabilities sent at `initialize`, e.g.
+     * `{ extensions: { "io.modelcontextprotocol/ui": { mimeTypes: ["text/html;profile=mcp-app"] } } }`.
+     * Default `{}`.
+     */
+    readonly capabilities?: McpClientCapabilities;
+
+    /**
+     * Which protocol era to speak.
+     * - `"legacy"` (default): the `initialize` handshake, revisions up to 2025-11-25.
+     * - `"stateless"`: revision 2026-07-28, no handshake; `connect()` calls
+     *   `server/discover`, every request carries its `_meta`, and a server that
+     *   does not answer it is an error.
+     * - `"auto"`: the spec's probe: `server/discover` first, `initialize` when
+     *   the server answers with anything but a stateless result or a recognized
+     *   stateless error, or not within {@link probeTimeoutMs}.
+     */
+    readonly protocol?: "legacy" | "auto" | "stateless";
+
+    /** How long `"auto"` waits for `server/discover` before assuming an older server. @default 5000 */
+    readonly probeTimeoutMs?: number;
+}
+
+/** A server-to-client notification, as {@link IMcpClient.onNotification} reports it. */
+export interface McpNotificationMessage {
+    readonly method: string;
+    readonly params?: unknown;
+}
+
 export interface IMcpClient {
     /** Human-readable name of this client. */
     readonly name: string;
@@ -54,6 +94,18 @@ export interface IMcpClient {
      * before the handshake completes and after {@link disconnect}.
      */
     readonly protocolVersion: string | undefined;
+
+    /** The capabilities the server declared. Optional so existing implementations keep compiling. */
+    readonly serverCapabilities?: McpServerCapabilities;
+
+    /** The settings the server declared for one extension, `undefined` when it did not. */
+    serverExtension?(extensionId: string): Readonly<Record<string, unknown>> | undefined;
+
+    /** Every server notification, raw. */
+    readonly onNotification?: IEventSource<McpNotificationMessage>;
+
+    /** Sends any request and resolves with its raw result. */
+    request?<T = unknown>(method: string, params?: unknown, options?: McpRequestOptions): Promise<T>;
 
     /**
      * Opens the transport, performs the MCP `initialize` handshake, and sends

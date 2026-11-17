@@ -4,4 +4,8 @@ export * from "./mcp.behavior.interfaces";
 export * from "./mcp.server.interfaces";
 export * from "./mcp.transport.interfaces";
 export * from "./mcp.client.interfaces";
+export * from "./mcp.extension.interfaces";
+export * from "./mcp.annotations.interfaces";
+export * from "./mcp.apps.interfaces";
+export * from "./mcp.events.interfaces";
 export * from "./eventSource";
