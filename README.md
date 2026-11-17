@@ -140,6 +140,7 @@ Revisions accepted during the handshake: `2025-11-25` (default), `2025-06-18`, `
 | `2026-07-28` (stateless): `server/discover`, per-request `_meta`, `subscriptions/listen`, `resultType`, `ttlMs`/`cacheScope`, `-32020`/`-32021`/`-32022`, multi round-trip results from tools, Streamable HTTP without sessions (`Mcp-Method`, `Mcp-Name`) | yes (unreleased), beside the handshake revisions |
 | Extensions: `capabilities.extensions`, `withExtension()`, extension methods and notifications, `client.serverExtension()` | yes (unreleased) |
 | Events (`io.modelcontextprotocol/events`, SEP-3415): `McpEventLog`, `McpEventsExtension` (list, poll, stream), `McpEventsClient` | yes (unreleased), stateless revisions only |
+| Events webhook delivery: `McpWebhookDispatcher` (Standard Webhooks signing, SSRF checks at delivery, endpoint verification, bounded retries) | yes (unreleased), Node only |
 | MCP Apps (`io.modelcontextprotocol/ui`): `withUi()`, `uiResource()`, `McpAppsExtension` | yes (unreleased) |
 | Action metadata and trust annotations (experimental drafts): `withActionMetadata()`, `withTrustAnnotations()` | yes (unreleased) |
 | Progress, sampling, roots, elicitation, tasks | not yet |

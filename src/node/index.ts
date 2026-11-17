@@ -9,3 +9,5 @@ export type { IChildProcessTransportOptions, ChildProcessStderr } from "./childp
 export { loadGrammarDirectory } from "./grammar.directory";
 export type { GrammarDirectory, GrammarDirectoryFile, GrammarDirectoryOptions, GrammarDirectorySurface } from "./grammar.directory";
 export { StatelessRequestTransport, decodeMcpHeaderValue, encodeMcpHeaderValue, mcpNameOf } from "./streamable-http.stateless";
+export { McpWebhookDispatcher, isGloballyRoutable, signWebhook, verifyWebhook } from "./events.webhook";
+export type { IMcpWebhookStore, McpWebhookDispatcherOptions, McpWebhookRecord } from "./events.webhook";

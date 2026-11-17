@@ -214,6 +214,26 @@ const stream = events.stream("alarm", { area: "nord" }, { onEvent: (e) => handle
 - Errors: unknown event `-32023`, delivery mode not offered `-32026`, bad cursor or arguments `-32602`. `Mcp-Name` carries `params.name` on `events/poll`, `/stream`, `/subscribe`, `/unsubscribe`.
 - Extension hooks used here: `statelessOnly`, `subscriptionFlags`, and `request.notify()` for notifications that belong to a request.
 
+### Webhook delivery (`events/subscribe`, `events/unsubscribe`)
+
+```ts
+import { McpWebhookDispatcher } from "@cyanmycelium/mcp-core/node";
+const webhooks = new McpWebhookDispatcher(log, { allowDestination: (url, ip) => plantNetwork.contains(ip) }); // one per log
+await webhooks.restore(); // only with a `store`, for no-expiry subscriptions
+log.define({ name: "alarm", delivery: ["poll", "push", "webhook"] });
+// per server, with the caller the endpoint authenticated:
+new McpEventsExtension(log, { webhooks, principal: (request) => principalOf(request) });
+```
+
+- **Authenticated callers only**: no `principal`, `-32024`. Subscriptions are keyed by `(principal, url, name, arguments)`; the `id` (`sub_<hex>`) is derived from the key, a routing handle and never a credential.
+- **Checks at subscribe**: `https` URL (`allowInsecureHttp` for tests), `whsec_` secret of 24 to 64 bytes (`-32602`), the event offers `webhook` (`-32026`), quota per principal (`-32025`).
+- **Endpoint verification** before the first delivery: a signed `{"type":"verification","challenge"}` the endpoint echoes as `{"challenge"}` (constant-time compare), or `trustedUrls`. Cached per `(principal, url)`, rate-limited per host. Failure: `-32027` with `data.reason` (`challenge_failed`, `connection_refused`, `timeout`, `tls_error`, `http_4xx`, `http_5xx`), never the endpoint's own response.
+- **SSRF**: resolved at each POST, globally routable addresses only unless `allowDestination` (a receiver on the plant network) says yes; the POST goes to the validated address with the name in Host and SNI; redirects are not followed.
+- **Signing** (Standard Webhooks): `webhook-id` per message (`msg_...`, kept across retries), `webhook-timestamp`, `webhook-signature: v1,...` (old and new secret during a rotation grace), `X-MCP-Subscription-Id`. `signWebhook()` / `verifyWebhook()` for receivers.
+- **Delivery**: each event retried independently on `retryDelaysMs` (default 4 attempts over 11 min); `410`/`413` not retried; bodies over 256 KiB abandoned. The body's `cursor` is the safe watermark. Suspension after a sustained failure rate; a refresh reactivates and reports `deliveryStatus`.
+- **Lifetime**: TTL granted within `minTtlMs`..`maxTtlMs`; `ttlMs: null` (no expiry) is granted only with a `store` (`IMcpWebhookStore`, which holds secrets). Removing an event terminates its subscriptions with a signed `terminated` envelope; `terminate(id, error)` does it on demand (revoked access).
+- Not provided: the `/.well-known/mcp-webhook-receiver.json` verification path, `v1a` (ed25519) signatures, `gap` envelopes (losses show as `truncated` at subscribe).
+
 ## 7. Spec coverage
 
 Every request a client may send is listed per revision in `MCP_SERVER_REQUEST_METHODS`. `tests/spec.coverage.test.ts` sends each one to a server and fails on `-32601` unless the method is in `MCP_SERVER_UNSUPPORTED_METHODS` with a reason. **When a new revision lands, add its methods there first**: the test then says what is missing.

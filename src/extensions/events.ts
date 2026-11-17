@@ -198,6 +198,75 @@ export class McpEventLog {
 // The server extension
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Webhook delivery: the contract a delivery service fulfils
+// ---------------------------------------------------------------------------
+
+/** Why a webhook endpoint failed, as a category: never the endpoint's own words. */
+export type McpWebhookErrorCategory = "connection_refused" | "timeout" | "tls_error" | "http_4xx" | "http_5xx" | "challenge_failed";
+
+/** The health of a webhook subscription, returned on refresh. */
+export interface McpWebhookDeliveryStatus {
+    active: boolean;
+    lastDeliveryAt: string | null;
+    lastError: McpWebhookErrorCategory | null;
+    failedSince?: string;
+    throttled?: boolean;
+    retryAfterMs?: number;
+}
+
+/** A validated `events/subscribe`. */
+export interface McpWebhookSubscribeRequest {
+    /** The server's canonical identifier of the authenticated caller. */
+    readonly principal: string;
+    readonly url: string;
+    /** `whsec_` + base64 of 24 to 64 bytes, already checked. */
+    readonly secret: string;
+    readonly name: string;
+    readonly args: Readonly<Record<string, unknown>>;
+    /** `null`: from now. */
+    readonly cursor: string | null;
+    readonly maxAgeMs?: number;
+    /** `undefined`: server default; `null`: the client asks for no expiry. */
+    readonly ttlMs?: number | null;
+}
+
+/** What `events/subscribe` answers, besides `resultType`. */
+export interface McpWebhookSubscribeResult {
+    id: string;
+    refreshBefore: string | null;
+    cursor: string | null;
+    truncated: boolean;
+    deliveryStatus?: McpWebhookDeliveryStatus;
+}
+
+/**
+ * Delivers events by webhook for an {@link McpEventsExtension}. It owns the
+ * subscriptions, the endpoint verification, the signing and the retries.
+ * `McpWebhookDispatcher` (from `@cyanmycelium/mcp-core/node`) is the
+ * implementation this package ships.
+ *
+ * Throw an {@link McpEventsError} to refuse: `-32027` with `data.reason` for
+ * an endpoint that failed verification, `-32025` for a quota.
+ */
+export interface IMcpWebhookService {
+    /** Accept `http://` callback URLs: for tests and development only. */
+    readonly allowsInsecureHttp?: boolean;
+    subscribe(request: McpWebhookSubscribeRequest): Promise<McpWebhookSubscribeResult>;
+    /** `false` when no subscription has this key. */
+    unsubscribe(key: { readonly principal: string; readonly url: string; readonly name: string; readonly args: Readonly<Record<string, unknown>> }): Promise<boolean>;
+}
+
+/** Whether `secret` is a Standard Webhooks symmetric secret: `whsec_` + base64 of 24 to 64 bytes. */
+export function isWebhookSecret(secret: unknown): secret is string {
+    if (typeof secret !== "string" || !secret.startsWith("whsec_")) return false;
+    const encoded = secret.slice("whsec_".length);
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded) || encoded.length % 4 !== 0) return false;
+    const padding = encoded.endsWith("==") ? 2 : encoded.endsWith("=") ? 1 : 0;
+    const bytes = (encoded.length / 4) * 3 - padding;
+    return bytes >= 24 && bytes <= 64;
+}
+
 /** Options of {@link McpEventsExtension}. */
 export interface McpEventsExtensionOptions {
     /** Suggested delay before the next poll. @default 5000 */
@@ -207,6 +276,19 @@ export interface McpEventsExtensionOptions {
     /** Bounds of the heartbeat interval a client may ask for. @default 1000 to 300000 */
     readonly minHeartbeatMs?: number;
     readonly maxHeartbeatMs?: number;
+    /**
+     * Webhook delivery. Without it, `events/subscribe` answers `-32026` and
+     * no event is described as delivered by webhook.
+     */
+    readonly webhooks?: IMcpWebhookService;
+    /**
+     * The authenticated caller of a request, as the server's canonical
+     * identifier (an OAuth `sub`, a service account). Webhook subscriptions
+     * are keyed by it and refused without it (`-32024`): an unauthenticated
+     * server may offer poll and push, never webhook. A server built per
+     * request (Streamable HTTP) usually passes the principal its factory got.
+     */
+    readonly principal?: string | ((request: IMcpRequestContext) => string | undefined);
 }
 
 /** A parsed `events/poll` or `events/stream` request. */
@@ -223,9 +305,9 @@ interface IEventRequest {
  * `eventsListChanged`.
  *
  * Stateless revisions only, as the extension defines. Webhook delivery
- * (`events/subscribe`) is not served: it makes the server POST to a URL the
- * client chooses, which calls for SSRF checks, endpoint verification and
- * signing this package does not provide; it answers `-32026`.
+ * (`events/subscribe`, `events/unsubscribe`) is served when
+ * {@link McpEventsExtensionOptions.webhooks} is given, to authenticated
+ * callers only; otherwise it answers `-32026`.
  */
 export class McpEventsExtension implements IMcpServerExtension {
     readonly id = MCP_EVENTS_EXTENSION;
@@ -234,7 +316,9 @@ export class McpEventsExtension implements IMcpServerExtension {
     readonly methods: Readonly<Record<string, McpExtensionHandler>>;
 
     private readonly _log: McpEventLog;
-    private readonly _options: Required<McpEventsExtensionOptions>;
+    private readonly _options: Required<Omit<McpEventsExtensionOptions, "webhooks" | "principal">>;
+    private readonly _webhooks: IMcpWebhookService | undefined;
+    private readonly _principal: McpEventsExtensionOptions["principal"];
     private readonly _streams = new Set<() => void>();
     private _unsubscribeList: (() => void) | undefined;
 
@@ -246,14 +330,14 @@ export class McpEventsExtension implements IMcpServerExtension {
             minHeartbeatMs: options.minHeartbeatMs ?? 1_000,
             maxHeartbeatMs: options.maxHeartbeatMs ?? 300_000,
         };
-        const unsupported: McpExtensionHandler = (req) =>
-            jsonRpcError(req.id, MCP_EVENTS_ERROR_CODES.unsupported, "Webhook delivery is not supported by this server: use events/poll or events/stream");
+        this._webhooks = options.webhooks;
+        this._principal = options.principal;
         this.methods = {
-            "events/list": (req) => jsonRpcOk(req.id, { events: this._log.descriptors() }),
+            "events/list": (req) => jsonRpcOk(req.id, { events: this._describe() }),
             "events/poll": (req) => this._poll(req),
             "events/stream": (req, ctx) => this._stream(req, ctx),
-            "events/subscribe": unsupported,
-            "events/unsubscribe": unsupported,
+            "events/subscribe": (req, ctx) => this._subscribe(req, ctx),
+            "events/unsubscribe": (req, ctx) => this._unsubscribe(req, ctx),
         };
     }
 
@@ -271,6 +355,100 @@ export class McpEventsExtension implements IMcpServerExtension {
         this._unsubscribeList?.();
         this._unsubscribeList = undefined;
         for (const end of [...this._streams]) end();
+    }
+
+    /** The descriptors, without `webhook` when no delivery service is configured. */
+    private _describe(): McpEventDescriptor[] {
+        if (this._webhooks) return this._log.descriptors();
+        return this._log
+            .descriptors()
+            .map((descriptor) => ({ ...descriptor, delivery: descriptor.delivery.filter((mode) => mode !== "webhook") }))
+            .filter((descriptor) => descriptor.delivery.length > 0);
+    }
+
+    /** The authenticated caller, or `undefined`. */
+    private _principalOf(ctx: IMcpRequestContext): string | undefined {
+        const principal = typeof this._principal === "function" ? this._principal(ctx) : this._principal;
+        return typeof principal === "string" && principal.length > 0 ? principal : undefined;
+    }
+
+    /** Checks what `events/subscribe` and `events/unsubscribe` share, or answers the error. */
+    private _webhookKey(
+        req: JsonRpcRequest,
+        ctx: IMcpRequestContext
+    ): { service: IMcpWebhookService; principal: string; name: string; args: Record<string, unknown>; url: string } | JsonRpcResponse {
+        const service = this._webhooks;
+        if (!service)
+            return jsonRpcError(req.id, MCP_EVENTS_ERROR_CODES.unsupported, "Webhook delivery is not supported by this server", { feature: "deliveryMode", value: "webhook" });
+        const principal = this._principalOf(ctx);
+        if (!principal) return jsonRpcError(req.id, MCP_EVENTS_ERROR_CODES.forbidden, "Webhook subscriptions need an authenticated caller");
+        const params = isRecord(req.params) ? req.params : {};
+        const name = params["name"];
+        if (typeof name !== "string" || name.length === 0) return jsonRpcError(req.id, -32602, "Missing required parameter: name");
+        const args = params["arguments"] === undefined ? {} : params["arguments"];
+        if (!isRecord(args)) return jsonRpcError(req.id, -32602, "arguments must be an object");
+        const delivery = params["delivery"];
+        const url = isRecord(delivery) ? delivery["url"] : undefined;
+        if (typeof url !== "string") return jsonRpcError(req.id, -32602, "Missing required parameter: delivery.url");
+        let parsed: URL;
+        try {
+            parsed = new URL(url);
+        } catch {
+            return jsonRpcError(req.id, -32602, "delivery.url is not a URL");
+        }
+        const schemeAllowed = parsed.protocol === "https:" || (service.allowsInsecureHttp === true && parsed.protocol === "http:");
+        if (!schemeAllowed || parsed.username || parsed.password) return jsonRpcError(req.id, -32602, "delivery.url must be an https:// URL without credentials");
+        return { service, principal, name, args, url: parsed.toString() };
+    }
+
+    /** `events/subscribe`: creates or refreshes a webhook subscription. */
+    private async _subscribe(req: JsonRpcRequest, ctx: IMcpRequestContext): Promise<JsonRpcResponse> {
+        const key = this._webhookKey(req, ctx);
+        if ("jsonrpc" in key) return key;
+        const definition = this._log.definition(key.name);
+        if (!definition) return jsonRpcError(req.id, MCP_EVENTS_ERROR_CODES.notFound, `Unknown event: ${key.name}`, { kind: "event", name: key.name });
+        if (!(definition.delivery ?? ["poll", "push"]).includes("webhook")) {
+            return jsonRpcError(req.id, MCP_EVENTS_ERROR_CODES.unsupported, `Event "${key.name}" is not delivered by webhook`, { feature: "deliveryMode", value: "webhook" });
+        }
+        const params = isRecord(req.params) ? req.params : {};
+        const delivery = params["delivery"] as Record<string, unknown>;
+        if (delivery["mode"] !== undefined && delivery["mode"] !== "webhook") return jsonRpcError(req.id, -32602, 'delivery.mode must be "webhook"');
+        if (!isWebhookSecret(delivery["secret"])) return jsonRpcError(req.id, -32602, "delivery.secret must be whsec_ followed by the base64 of 24 to 64 bytes");
+        const cursor = params["cursor"];
+        if (cursor !== undefined && cursor !== null && (typeof cursor !== "string" || !/^\d+$/.test(cursor)))
+            return jsonRpcError(req.id, -32602, `Invalid cursor: ${String(cursor)}`);
+        const ttlMs = params["ttlMs"];
+        if (ttlMs !== undefined && ttlMs !== null && (typeof ttlMs !== "number" || !(ttlMs >= 0)))
+            return jsonRpcError(req.id, -32602, "ttlMs must be a non-negative number or null");
+        const maxAgeMs = params["maxAgeMs"];
+        try {
+            const result = await key.service.subscribe({
+                principal: key.principal,
+                url: key.url,
+                secret: delivery["secret"] as string,
+                name: key.name,
+                args: key.args,
+                cursor: typeof cursor === "string" ? cursor : null,
+                ...(typeof maxAgeMs === "number" && maxAgeMs >= 0 ? { maxAgeMs } : {}),
+                ...(ttlMs === null ? { ttlMs: null } : typeof ttlMs === "number" ? { ttlMs } : {}),
+            });
+            return jsonRpcOk(req.id, result);
+        } catch (error) {
+            return toJsonRpcError(req, error);
+        }
+    }
+
+    /** `events/unsubscribe`: removes a webhook subscription by its key. */
+    private async _unsubscribe(req: JsonRpcRequest, ctx: IMcpRequestContext): Promise<JsonRpcResponse> {
+        const key = this._webhookKey(req, ctx);
+        if ("jsonrpc" in key) return key;
+        try {
+            const removed = await key.service.unsubscribe({ principal: key.principal, url: key.url, name: key.name, args: key.args });
+            if (!removed) return jsonRpcError(req.id, MCP_EVENTS_ERROR_CODES.notFound, "No such subscription", { kind: "subscription" });
+            return jsonRpcOk(req.id, {});
+        } catch (error) {
+            return toJsonRpcError(req, error);
+        }
     }
 
     /** Reads `name`, `arguments` and `cursor`, or answers the error. */
