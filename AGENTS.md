@@ -152,7 +152,7 @@ new McpServerBuilder().withName("page").withTransport(transport).register(new We
 - Cancellation crosses both ways (§5b): the agent's `signal` withdraws the server call; an MCP cancellation aborts the page tool's `signal`.
 - `npm run test:browser` checks all of this against a real Chrome (146+, `--enable-features=WebMCP`, headless, throwaway profile): `e2e/webmcp/`. Chrome 157 drops `outputSchema` from `getTools()`.
 
-## 6c. Extensions (unreleased)
+## 6c. Extensions (1.6.0)
 
 An MCP extension is declared under `capabilities.extensions["<id>"]` (a settings object, `{}` for none) and may add methods. On revision `2025-11-25` both sides declare it at `initialize`.
 
@@ -175,7 +175,7 @@ if (client.serverExtension("com.example/echo")) await client.request("echo/say",
 - **Action metadata** (`annotations["io.modelcontextprotocol/action-metadata"]`) and **trust annotations** (`_meta["io.modelcontextprotocol/trust-annotations"]` on a result or a block): experimental drafts, value sets other than `outcome` are open strings. `toolNeedsReview()` and `trustAnnotationsOf()` (block flags never weaken the result's). Advisory: never a grant.
 - `presentTools(tools, request)` reads `request.clientCapabilities`: the session's, or the request's own when it is stateless.
 
-## 6d. Protocol 2026-07-28, stateless (unreleased)
+## 6d. Protocol 2026-07-28, stateless (1.6.0)
 
 No `initialize`: every request carries `params._meta["io.modelcontextprotocol/protocolVersion"]` and `["io.modelcontextprotocol/clientCapabilities"]` (`MCP_META`). **One server serves both eras**, chosen per request: such a `_meta` means stateless, `initialize` opens a session as before.
 
@@ -193,7 +193,7 @@ client.isStateless; // true against a 2026-07-28 server
 - List changes and resource updates reach stateless clients only through `subscriptions/listen`. The client opens and reopens one itself; `subscribeResource()` and `setLoggingLevel()` keep their meaning.
 - Streamable HTTP: a POST without `Mcp-Session-Id` carrying a stateless `_meta` gets a server built for that request (the same `createServer` factory) and is answered as JSON, or SSE once a notification comes first; `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` (`=?base64?...?=` for non-ASCII) must match the body (`400`, `-32020`); an unknown method is `404`. Closing the stream cancels the request. Sessions keep working on the same URL. `statelessProtocolVersions: []` (server options or endpoint options) turns the stateless era off.
 
-## 6e. Events (unreleased, SEP-3415)
+## 6e. Events (1.6.0, SEP-3415)
 
 `io.modelcontextprotocol/events`: named event streams a client polls or streams from a cursor. Stateless revisions only: declared in `server/discover`, `-32601` to an `initialize` session.
 
@@ -247,7 +247,7 @@ Every request a client may send is listed per revision in `MCP_SERVER_REQUEST_ME
 | sampling, roots, elicitation (server-to-client) | the client answers `-32601` |
 | OAuth client flow | not implemented; pass a token through transport `headers` |
 | Pagination | the client follows `nextCursor`; the server returns single pages |
-| `server/discover`, `subscriptions/listen` (2026-07-28, stateless) | yes, unreleased (§6d); outside `MCP_SERVER_REQUEST_METHODS`, which lists the handshake revisions, and tested in `tests/stateless.test.ts` |
+| `server/discover`, `subscriptions/listen` (2026-07-28, stateless) | yes since 1.6.0 (§6d); outside `MCP_SERVER_REQUEST_METHODS`, which lists the handshake revisions, and tested in `tests/stateless.test.ts` |
 
 A custom `IMcpServerHandlers` written before 1.3.0 keeps compiling and working: the handlers added since are optional and the server falls back to its own.
 
