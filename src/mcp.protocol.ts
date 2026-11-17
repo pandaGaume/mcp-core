@@ -9,8 +9,63 @@
  * @see {@link https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle MCP Lifecycle}
  */
 
-/** The newest MCP revision this package implements. */
+/**
+ * The newest MCP revision this package negotiates through `initialize`.
+ *
+ * Revisions from 2026-07-28 on have no handshake: see
+ * {@link MCP_STATELESS_PROTOCOL_VERSIONS}.
+ */
 export const MCP_LATEST_PROTOCOL_VERSION = "2025-11-25";
+
+/**
+ * The newest stateless MCP revision this package implements: no `initialize`,
+ * every request carries its revision and the client's capabilities in
+ * `params._meta`, and `server/discover` replaces the handshake.
+ */
+export const MCP_LATEST_STATELESS_PROTOCOL_VERSION = "2026-07-28";
+
+/** Every stateless revision this package can speak, newest first. */
+export const MCP_STATELESS_PROTOCOL_VERSIONS: readonly string[] = [MCP_LATEST_STATELESS_PROTOCOL_VERSION] as const;
+
+/** Whether `version` is a stateless revision (2026-07-28 or later) this package, or a narrowed set, speaks. */
+export function isStatelessProtocolVersion(version: string | undefined, supported: readonly string[] = MCP_STATELESS_PROTOCOL_VERSIONS): boolean {
+    return version !== undefined && supported.includes(version);
+}
+
+/** Reserved `_meta` keys of the stateless revisions. */
+export const MCP_META = Object.freeze({
+    /** Request, required: the revision the request is written in. */
+    protocolVersion: "io.modelcontextprotocol/protocolVersion",
+    /** Request, required: what the client supports, for this request only. */
+    clientCapabilities: "io.modelcontextprotocol/clientCapabilities",
+    /** Request, recommended: who the client is. */
+    clientInfo: "io.modelcontextprotocol/clientInfo",
+    /** Request, deprecated: the lowest `notifications/message` level wanted for this request. */
+    logLevel: "io.modelcontextprotocol/logLevel",
+    /** Result, recommended: who the server is. */
+    serverInfo: "io.modelcontextprotocol/serverInfo",
+    /** Notification and `subscriptions/listen` result: the listen request it belongs to. */
+    subscriptionId: "io.modelcontextprotocol/subscriptionId",
+} as const);
+
+/** Error codes the MCP specification reserves (range -32020 to -32099). */
+export const MCP_ERROR_CODES = Object.freeze({
+    /** Streamable HTTP: a required header is missing, malformed, or contradicts the body. */
+    headerMismatch: -32020,
+    /** The request needs a client capability the request did not declare. */
+    missingRequiredClientCapability: -32021,
+    /** The request's revision is not one the server speaks. `data: { supported, requested }`. */
+    unsupportedProtocolVersion: -32022,
+} as const);
+
+/** Requests the stateless revisions add. */
+export const MCP_STATELESS_REQUEST_METHODS: readonly string[] = ["server/discover", "subscriptions/listen"] as const;
+
+/** Requests the stateless revisions removed: a stateless request naming one gets `-32601`. */
+export const MCP_STATELESS_REMOVED_METHODS: readonly string[] = ["initialize", "ping", "logging/setLevel", "resources/subscribe", "resources/unsubscribe"] as const;
+
+/** Results that carry `ttlMs` and `cacheScope` in the stateless revisions. */
+export const MCP_CACHEABLE_METHODS: readonly string[] = ["server/discover", "tools/list", "prompts/list", "resources/list", "resources/templates/list", "resources/read"] as const;
 
 /**
  * Every MCP revision this package can speak, ordered newest first.

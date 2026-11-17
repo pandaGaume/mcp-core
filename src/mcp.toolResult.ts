@@ -16,6 +16,17 @@ import { McpResourceContent, McpToolResult } from "./interfaces";
  * ```
  */
 export const McpToolResults = {
+    /**
+     * A multi round-trip answer (revision 2026-07-28): the tool cannot finish
+     * without more input, which the client gathers and brings back on a retry
+     * of the same call (`request.inputResponses`, `request.requestState`).
+     * Only a stateless request (`request.stateless`) can take it; a handshake
+     * session gets an error instead. `requestState` comes back from the
+     * client: sign it if it decides anything.
+     */
+    inputRequired: (input: { inputRequests?: Record<string, { method: string; params?: unknown }>; requestState?: string }): McpToolResult =>
+        ({ resultType: "input_required", ...input }) as unknown as McpToolResult,
+
     /** Plain text confirmation or message. */
     text: (text: string): McpToolResult => ({ content: [{ type: "text", text }] }),
 

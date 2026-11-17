@@ -8,3 +8,6 @@ export { ChildProcessTransport } from "./childprocess.transport";
 export type { IChildProcessTransportOptions, ChildProcessStderr } from "./childprocess.transport";
 export { loadGrammarDirectory } from "./grammar.directory";
 export type { GrammarDirectory, GrammarDirectoryFile, GrammarDirectoryOptions, GrammarDirectorySurface } from "./grammar.directory";
+export { StatelessRequestTransport, decodeMcpHeaderValue, encodeMcpHeaderValue, mcpNameOf } from "./streamable-http.stateless";
+export { McpWebhookDispatcher, isGloballyRoutable, signWebhook, verifyWebhook } from "./events.webhook";
+export type { IMcpWebhookStore, McpWebhookDispatcherOptions, McpWebhookRecord } from "./events.webhook";

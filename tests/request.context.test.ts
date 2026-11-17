@@ -24,6 +24,19 @@ import type {
  * unchanged.
  */
 
+/**
+ * The part of a request context these tests pin down: identity, method and
+ * `_meta`. The client view (revision, capabilities, `log`) is covered in
+ * tests/stateless.test.ts.
+ */
+function core(request: IMcpRequestContext | undefined): IMcpRequestContext | undefined {
+    if (!request) return request;
+    const { stateless: _s, protocolVersion: _p, clientCapabilities: _c, clientInfo: _i, log: _l, notify: _n, inputResponses: _r, requestState: _t, ...rest } = request;
+    void [_s, _p, _c, _i, _l, _n, _r, _t];
+    // Keep the frozen state visible: the "is frozen" test reads it through this projection.
+    return Object.isFrozen(request) ? Object.freeze(rest) : rest;
+}
+
 /** Records the request context each operation received. */
 class RecordingAdapter extends McpAdapterBase {
     readonly seen: { op: string; request?: IMcpRequestContext }[] = [];
@@ -33,12 +46,12 @@ class RecordingAdapter extends McpAdapterBase {
     }
 
     async readResourceAsync(uri: string, request?: IMcpRequestContext): Promise<McpResourceContent | undefined> {
-        this.seen.push({ op: "read", request });
+        this.seen.push({ op: "read", request: core(request) });
         return { uri, text: "x" };
     }
 
     async executeToolAsync(_uri: string, _tool: string, _args: Record<string, unknown>, request?: IMcpRequestContext): Promise<McpToolResult> {
-        this.seen.push({ op: "call", request });
+        this.seen.push({ op: "call", request: core(request) });
         return McpToolResults.json({ ok: true });
     }
 }
@@ -65,7 +78,7 @@ class RecordingBehavior extends McpBehavior {
     }
 
     async getPromptAsync(_name: string, _args: Record<string, string>, request?: IMcpRequestContext): Promise<McpPromptResult | undefined> {
-        this.recorder.seen.push({ op: "prompt", request });
+        this.recorder.seen.push({ op: "prompt", request: core(request) });
         return { messages: [] };
     }
 
@@ -75,7 +88,7 @@ class RecordingBehavior extends McpBehavior {
         _context?: { arguments?: Record<string, string> },
         request?: IMcpRequestContext
     ): Promise<McpCompletion | undefined> {
-        this.recorder.seen.push({ op: "complete", request });
+        this.recorder.seen.push({ op: "complete", request: core(request) });
         return { values: [] };
     }
 }

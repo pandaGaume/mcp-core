@@ -3,6 +3,8 @@ import * as https from "node:https";
 import type { ClientRequest, IncomingMessage, RequestOptions } from "node:http";
 import type { Socket } from "node:net";
 import type { IMessageTransport } from "../interfaces";
+import { MCP_META } from "../mcp.protocol";
+import { encodeMcpHeaderValue, mcpNameOf } from "./streamable-http.stateless";
 
 /**
  * Options for the Node.js Streamable HTTP client transport.
@@ -119,6 +121,59 @@ type JsonRpcId = string | number;
  * Notifications and responses yield `undefined`: nothing is pending on them, so
  * a transport failure has no request to be reported against.
  */
+/** The stateless (2026-07-28) shape of a frame: its revision in `params._meta`, its method, its `Mcp-Name`. */
+function statelessFrameOf(frame: string): { id?: JsonRpcId; method: string; version: string; name?: string } | undefined {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(frame);
+    } catch {
+        return undefined;
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
+    const { id, method, params } = parsed as { id?: unknown; method?: unknown; params?: { _meta?: Record<string, unknown> } };
+    const version = params?._meta?.[MCP_META.protocolVersion];
+    if (typeof method !== "string" || typeof version !== "string") return undefined;
+    const name = mcpNameOf(method, params);
+    return {
+        ...(typeof id === "string" || typeof id === "number" ? { id } : {}),
+        method,
+        version,
+        ...(name !== undefined ? { name } : {}),
+    };
+}
+
+/** The request a `notifications/cancelled` frame withdraws, else `undefined`. */
+function cancelledRequestOf(frame: string): JsonRpcId | undefined {
+    try {
+        const parsed = JSON.parse(frame) as { method?: unknown; params?: { requestId?: unknown } };
+        if (parsed.method !== "notifications/cancelled") return undefined;
+        const id = parsed.params?.requestId;
+        return typeof id === "string" || typeof id === "number" ? id : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+/** The id a response frame answers, else `undefined`. */
+function responseIdOf(frame: string): JsonRpcId | undefined {
+    try {
+        const parsed = JSON.parse(frame) as { id?: unknown; method?: unknown };
+        if (parsed.method !== undefined) return undefined;
+        return typeof parsed.id === "string" || typeof parsed.id === "number" ? parsed.id : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+function looksLikeJsonRpc(body: string): boolean {
+    try {
+        const parsed = JSON.parse(body) as { jsonrpc?: unknown };
+        return parsed.jsonrpc === "2.0";
+    } catch {
+        return false;
+    }
+}
+
 function pendingRequestId(frame: string): JsonRpcId | undefined {
     let parsed: unknown;
     try {
@@ -186,6 +241,10 @@ export class StreamableHttpTransport implements IMessageTransport {
 
     private _protocolVersion: string | undefined;
     private _sessionId: string | null = null;
+    /** Stateless (2026-07-28) requests in flight, by JSON-RPC id, until answered or cancelled. */
+    private readonly _statelessExchanges = new Map<JsonRpcId, ClientRequest>();
+    /** Set once a stateless request went out: cancellations then close streams instead of posting. */
+    private _statelessSeen = false;
     private _open = false;
 
     private _getStreamRequest: ClientRequest | null = null;
@@ -252,6 +311,19 @@ export class StreamableHttpTransport implements IMessageTransport {
 
     public send(data: string): void {
         if (!this._open) return;
+        const stateless = statelessFrameOf(data);
+        if (stateless) return this._sendStateless(data, stateless);
+        if (this._statelessExchanges.size > 0 || this._statelessSeen) {
+            // 2026-07-28 has no client notification over HTTP: a cancellation
+            // closes the request's stream instead.
+            const cancelled = cancelledRequestOf(data);
+            if (cancelled !== undefined) {
+                const exchange = this._statelessExchanges.get(cancelled);
+                this._statelessExchanges.delete(cancelled);
+                exchange?.destroy();
+                return;
+            }
+        }
         const headers = this._requestHeaders({
             "Content-Type": "application/json",
             Accept: "application/json, text/event-stream",
@@ -266,6 +338,61 @@ export class StreamableHttpTransport implements IMessageTransport {
             (error) => this._reportConnectionFailure(error, requestId)
         );
         request.end(data);
+    }
+
+    /**
+     * POSTs one stateless request (2026-07-28): no session, the revision and
+     * method in headers, the response on that POST alone. A stream that ends
+     * before the answer loses the request, which the spec says to re-issue:
+     * the pending call gets an error to do so.
+     */
+    private _sendStateless(data: string, frame: { id?: JsonRpcId; method: string; version: string; name?: string }): void {
+        this._statelessSeen = true;
+        const headers: Record<string, string> = {
+            ...this._headers(),
+            "Content-Type": "application/json",
+            Accept: "application/json, text/event-stream",
+            "MCP-Protocol-Version": frame.version,
+            "Mcp-Method": frame.method,
+        };
+        if (frame.name !== undefined) headers["Mcp-Name"] = encodeMcpHeaderValue(frame.name);
+        const requestId = frame.id;
+        const request = this._request(
+            "POST",
+            headers,
+            (response) => {
+                const status = response.statusCode ?? 0;
+                if (status === 202 || status === 204) {
+                    response.resume();
+                    return;
+                }
+                const contentType = String(response.headers["content-type"] ?? "");
+                if (contentType.includes("text/event-stream")) {
+                    this._consumeSse(response, () => this._statelessStreamEnded(requestId));
+                    return;
+                }
+                this._readBody(response, (body) => {
+                    if (requestId !== undefined) this._statelessExchanges.delete(requestId);
+                    // A stateless error comes with 400 or 404 and a JSON-RPC body: forward it as the answer.
+                    if (status >= 400 && !looksLikeJsonRpc(body)) this._reportHttpFailure(status, body, requestId);
+                    else this._emitJsonBody(body, requestId);
+                });
+            },
+            (error) => {
+                if (requestId !== undefined && !this._statelessExchanges.has(requestId)) return;
+                if (requestId !== undefined) this._statelessExchanges.delete(requestId);
+                this._reportConnectionFailure(error, requestId);
+            }
+        );
+        if (requestId !== undefined) this._statelessExchanges.set(requestId, request);
+        request.end(data);
+    }
+
+    /** A stateless response stream closed: if it never carried its answer, the request is lost. */
+    private _statelessStreamEnded(requestId: JsonRpcId | undefined): void {
+        if (requestId === undefined || !this._statelessExchanges.has(requestId)) return;
+        this._statelessExchanges.delete(requestId);
+        this.onMessage?.(JSON.stringify({ jsonrpc: "2.0", id: requestId, error: { code: -32603, message: "The response stream closed before the answer; re-issue the request" } }));
     }
 
     public close(): void {
@@ -479,7 +606,12 @@ export class StreamableHttpTransport implements IMessageTransport {
     private _onSseEvent(event: SseEvent): void {
         if (event.id !== undefined) this._lastEventId = event.id;
         if (event.retry !== undefined) this._reconnectDelayMs = event.retry;
-        if (event.event === "message" && event.data.length > 0) this.onMessage?.(event.data);
+        if (event.event === "message" && event.data.length > 0) {
+            // A stateless exchange is settled once its answer went by.
+            const answered = responseIdOf(event.data);
+            if (answered !== undefined) this._statelessExchanges.delete(answered);
+            this.onMessage?.(event.data);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -636,6 +768,8 @@ export class StreamableHttpTransport implements IMessageTransport {
         this._requests.clear();
 
         this._sessionId = null;
+        this._statelessExchanges.clear();
+        this._statelessSeen = false;
         this._lastEventId = undefined;
         this._reconnectDelayMs = this._baseReconnectDelayMs;
     }

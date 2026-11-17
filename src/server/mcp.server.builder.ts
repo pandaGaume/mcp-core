@@ -1,4 +1,14 @@
-import type { IMessageTransport, IMcpBehavior, IMcpInitializer, IMcpServer, IMcpServerBuilder, IMcpServerHandlers, IMcpServerOptions, McpGrammarResolver } from "../interfaces";
+import type {
+    IMessageTransport,
+    IMcpBehavior,
+    IMcpInitializer,
+    IMcpServer,
+    IMcpServerBuilder,
+    IMcpServerExtension,
+    IMcpServerHandlers,
+    IMcpServerOptions,
+    McpGrammarResolver,
+} from "../interfaces";
 import { McpGrammar } from "../mcp.grammar";
 import type { McpGrammarStore } from "../mcp.grammarStore";
 import type { GrammarResolverOptions } from "../mcp.resolver";
@@ -29,6 +39,7 @@ export class McpServerBuilder implements IMcpServerBuilder {
     private _initializer: IMcpInitializer | undefined;
     private _handlers: IMcpServerHandlers | undefined;
     private _behaviors: IMcpBehavior[] = [];
+    private _extensions: IMcpServerExtension[] = [];
     private _options: IMcpServerOptions = {};
     private _grammars = new Map<string, McpGrammar>();
     private _wordingRule: string | undefined;
@@ -59,6 +70,17 @@ export class McpServerBuilder implements IMcpServerBuilder {
      */
     register(...behavior: IMcpBehavior[]): this {
         this._behaviors.push(...(behavior as IMcpBehavior[]));
+        return this;
+    }
+
+    /**
+     * Adds one or more MCP extensions: each is declared under
+     * `capabilities.extensions`, its methods and notifications are served, and
+     * its behaviors registered. Conflicts (a core method, a method two
+     * extensions claim, a repeated id) are refused at {@link build}.
+     */
+    withExtension(...extension: IMcpServerExtension[]): this {
+        this._extensions.push(...extension);
         return this;
     }
 
@@ -194,6 +216,9 @@ export class McpServerBuilder implements IMcpServerBuilder {
 
         for (const behavior of this._behaviors) {
             server.register(behavior);
+        }
+        for (const extension of this._extensions) {
+            server.registerExtension(extension);
         }
 
         return server;
